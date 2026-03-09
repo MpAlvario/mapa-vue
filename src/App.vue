@@ -17,6 +17,12 @@
     <MonitoreoMap
       v-if="mapaSeleccionado === 'monitoreo'"
     />
+    
+    <!-- MAPA RUTAS -->
+    <MapaRutas
+    v-if="mapaSeleccionado === 'rutas'"
+    />
+    
 
     <!-- LEYENDA SOLO PARA MÉXICO -->
     <PopulationLegend
@@ -30,6 +36,7 @@
 
 
 <script>
+import MapaRutas from './components/MapaRutas.vue'
 import MexicoMap from './components/MexicoMap.vue'
 import MonitoreoMap from './components/MonitoreoMap.vue'
 import Navbar from './components/navbar.vue'
@@ -39,8 +46,10 @@ export default {
   components: {
     MexicoMap,
     MonitoreoMap,
+    MapaRutas,
     Navbar,
     PopulationLegend
+    
   },
 
   data() {

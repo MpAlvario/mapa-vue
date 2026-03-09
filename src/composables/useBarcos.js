@@ -1,4 +1,3 @@
-//separar barcos (markers, fetch barcos, actualización markers)
 import L from "leaflet"
 
 export function useBarcos(map, popupBase, eventosPopup) {
@@ -7,40 +6,52 @@ export function useBarcos(map, popupBase, eventosPopup) {
 
   async function cargarBarcos() {
 
-    const res = await fetch("http://192.168.71.54:8080/proyecto/api_barco.php?ts=" + Date.now())
-    const json = await res.json()
+    try {
 
-    if (!json.ok) return
+      const res = await fetch(
+        "http://192.168.71.15:8080/proyecto/api_barco.php?ts=" + Date.now()
+      )
 
-    json.data.forEach(barco => {
+      const json = await res.json()
 
-      const lat = parseFloat(barco.latitud)
-      const lon = parseFloat(barco.longitud)
+      console.log("Datos barcos:", json)
 
-      if (markers[barco.codigo]) {
+      if (!json.ok) return
 
-        markers[barco.codigo].setLatLng([lat, lon])
+      json.data.forEach(barco => {
 
-  //si el popup esta abierto no se borra
-       if (!markers[barco.codigo].isPopupOpen()) {
-        markers[barco.codigo]
-        .setPopupContent(popupBase(barco))
-}
+        const lat = parseFloat(barco.latitud)
+        const lon = parseFloat(barco.longitud)
 
-      } else {
+        if (!lat || !lon) return
 
-        const marker = L.marker([lat, lon])
-          .addTo(map)
-          .bindPopup(popupBase(barco))
+        if (markers[barco.codigo]) {
 
-        marker.on("popupopen", e => {
-          eventosPopup(e, barco)
-        })
+          markers[barco.codigo].setLatLng([lat, lon])
 
-        markers[barco.codigo] = marker
-      }
+          if (!markers[barco.codigo].isPopupOpen()) {
+            markers[barco.codigo].setPopupContent(popupBase(barco))
+          }
 
-    })
+        } else {
+
+          const marker = L.marker([lat, lon])
+            .addTo(map)
+            .bindPopup(popupBase(barco))
+
+          marker.on("popupopen", e => {
+            eventosPopup(e, barco)
+          })
+
+          markers[barco.codigo] = marker
+        }
+
+      })
+
+    } catch (error) {
+      console.error("Error cargando barcos:", error)
+    }
+
   }
 
   return { cargarBarcos, markers }

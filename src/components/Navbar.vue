@@ -6,6 +6,7 @@
       <select v-model="localMap" @change="emitMapChange">
         <option value="mexico">Mapa de México</option>
         <option value="monitoreo">Mapa Monitoreo Marino</option>
+        <option value="rutas">Mapa de rutas</option>
       </select>
     </div>
 
@@ -14,7 +15,10 @@
       <h2>
         {{ localMap === 'mexico'
           ? 'Mapa de México'
-          : 'Mapa de Monitoreo Marino' }}
+          :localMap === 'monitoreo'
+          ?'Mapa de Monitoreo Marino'
+          :'Mapa de Rutas'
+        }}
       </h2>
     </div>
 
@@ -77,14 +81,27 @@ export default {
 <style scoped>
 
 .Navbar {
+
   height: 60px;
-  background: linear-gradient(90deg, #1b5e20, #2e7d32);
+
+  background: rgba(27, 94, 32, 0.75);
+
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
   color: white;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
+
   padding: 0 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+
+  box-shadow:
+    0 8px 25px rgba(0,0,0,0.35);
+
 }
 
 /* ZONAS */
@@ -112,34 +129,65 @@ export default {
 
 /* SELECTS */
 .Navbar select {
-  padding: 8px 36px 8px 14px;
-  border-radius: 20px;
+
+  padding: 10px 42px 10px 16px;
+
+  border-radius: 30px;
+
   border: none;
+
   font-size: 14px;
+
   background-color: white;
+
   color: #1b5e20;
+
   font-weight: 600;
+
   cursor: pointer;
 
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
 
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231b5e20'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 16px;
+  box-shadow:
+    0 4px 10px rgba(0,0,0,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.8);
 
-  transition: all 0.2s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231b5e20'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+
+  background-repeat: no-repeat;
+
+  background-position: right 14px center;
+
+  background-size: 18px;
+
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
+/* HOVER */
 
 .Navbar select:hover {
-  background-color: #f1f8f4;
+
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 8px 18px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.8);
 }
 
+/* CLICK */
+
+
+
+/* FOCUS */
+
 .Navbar select:focus {
+
   outline: none;
-  box-shadow: 0 0 0 2px rgba(27, 94, 32, 0.3);
+
+  box-shadow:
+    0 0 0 2px rgba(27,94,32,0.25),
+    0 6px 16px rgba(0,0,0,0.2);
 }
 
 </style>

@@ -26,7 +26,7 @@ export function useHistorial(map){
       console.log("CODIGO ENVIADO:", codigo)
 
       const res = await fetch(
-        "http://192.168.71.54:8080/proyecto/api_historial.php?codigo="
+        "http://192.168.71.15:8080/proyecto/api_historial.php?codigo="
         + encodeURIComponent(codigo)
         + "&ts="
         + Date.now()

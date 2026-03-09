@@ -30,9 +30,18 @@
 </template>
 
 <script>
+
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import "leaflet.heat/dist/leaflet-heat.js"
+
+delete L.Icon.Default.prototype._getIconUrl
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
+})
 
 export default {
   name: "MonitoreoMap",
@@ -118,11 +127,16 @@ export default {
 
       try {
         const res = await fetch(
-          "http://192.168.71.54:8080/proyecto/api_historial.php?codigo=" 
-          + codigo + "&ts=" + Date.now()
-        )
+          "http://192.168.71.50:8080/proyecto/api_historial.php?codigo=" 
+          + codigo + "&ts=" + Date.now(), {
+           
+            credentials: "omit" //para que viaje la sesión
+
+          })
 
         const json = await res.json()
+        const text = await res.text()
+console.log("RESPUESTA CRUDA:", text)
 
         if (!json.ok) {
           box.innerHTML = "Error"
@@ -168,63 +182,49 @@ export default {
       await this.verHistorial(this.barcoSeleccionado, false)
     },
 
-    async cargarBarcos() {
-      try {
-        const res = await fetch(
-          "http://192.168.71.54:8080/proyecto/api_barco.php?ts=" 
-          + Date.now()
-        )
+   async cargarBarcos() {
+  try {
+    const url = "http://192.168.71.50:8080/proyecto/api_barco.php?ts=" + Date.now();
+    const res = await fetch(url);
 
-        const json = await res.json()
-        if (!json.ok) return
+    if (!res.ok) {
+      throw new Error("Error HTTP: " + res.status);
+    }
 
-        json.data.forEach(barco => {
+    const json = await res.json();
+    console.log("Datos barcos:", json);
 
-          const lat = parseFloat(barco.latitud)
-          const lon = parseFloat(barco.longitud)
+    if (!json.ok) return;
 
-          if (this.markers[barco.codigo]) {
+    json.data.forEach(barco => {
 
-            this.markers[barco.codigo]
-              .setLatLng([lat, lon])
-              .setPopupContent(this.popupBase(barco))
+      const lat = parseFloat(barco.latitud);
+      const lon = parseFloat(barco.longitud);
 
-          } else {
+      if (isNaN(lat) || isNaN(lon)) return;
 
-            this.markers[barco.codigo] = L.marker([lat, lon])
-              .addTo(this.map)
-              .bindPopup(this.popupBase(barco))
+      // Si el marker ya existe → solo lo movemos
+      if (this.markers[barco.codigo]) {
 
-            //  EVENTO 
-            this.markers[barco.codigo].on("popupopen", (e) => {
+        this.markers[barco.codigo].setLatLng([lat, lon]);
+        this.markers[barco.codigo]
+          .setPopupContent(this.popupBase(barco));
 
-              const popupEl = e.popup.getElement()
+      } else {
+        // Si no existe → lo creamos
+        const marker = L.marker([lat, lon])
+          .addTo(this.map)
+          .bindPopup(this.popupBase(barco));
 
-              const btnVerMas = popupEl.querySelector(".btn-vermas")
-              const btnCerrar = popupEl.querySelector(".btn-cerrar")
-
-              if (btnVerMas) {
-                btnVerMas.addEventListener("click", () => {
-                  this.verHistorial(barco.codigo)
-                })
-              }
-
-              if (btnCerrar) {
-                btnCerrar.addEventListener("click", () => {
-                  this.cerrarHistorial()
-                })
-              }
-
-            })
-
-          }
-
-        })
-
-      } catch (err) {
-        console.error(err)
+        this.markers[barco.codigo] = marker;
       }
-    },
+
+    });
+
+  } catch (error) {
+    console.error("Error cargando barcos:", error);
+  }
+},
 
     apagarHeatmap() {
       if (this.heatLayer) {
@@ -269,7 +269,7 @@ export default {
 
     async cargarHeatmap() {
       try {
-        let url = "http://192.168.71.54:8080/proyecto/api_heatmap.php?ts=" 
+        let url = "http://192.168.71.50:8080/proyecto/api_heatmap.php?ts=" 
           + Date.now()
 
         if (this.modoHeatmap === "barco" && this.barcoSeleccionado) {
