@@ -8,6 +8,14 @@ export function useLeafletMap(mapContainer) {
   const patrullasLayer = ref(null)
   const miUbicacion = ref(null)
 
+  // Icono personalizado  pin.png
+  const pinIcon = L.icon({
+    iconUrl: "/pin.png",         // Ruta desde la carpeta public/
+    iconSize: [38, 38],          // Tamaño del icono [ancho, alto]
+    iconAnchor: [19, 38],        // Punto del icono que toca el mapa [x, y]
+    popupAnchor: [0, -38]        // Posición del popup relativa al icono
+  })
+
   function initMap() {
     if (!mapContainer.value) return
 
@@ -31,7 +39,7 @@ export function useLeafletMap(mapContainer) {
         const { latitude, longitude } = pos.coords
         miUbicacion.value = L.latLng(latitude, longitude)
 
-        L.marker(miUbicacion.value)
+        L.marker(miUbicacion.value, { icon: pinIcon }) // 👈 Aquí se aplica
           .addTo(map.value)
           .bindPopup("📍 Mi ubicación")
 

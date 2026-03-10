@@ -28,7 +28,6 @@
       <div class="info" v-html="info"></div>
     </div>
 
-    <!-- IMPORTANTE: usamos ref, NO id -->
     <div ref="mapContainer" class="map"></div>
   </div>
 </template>
@@ -36,13 +35,13 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from "vue"
 
-import { useLeafletMap }    from "../composables/useLeafletMap"
-import { useRouting }       from "../composables/useRouting"
-import { useMapPatrullas }  from "../composables/usePatrullas"
-import { useIncidencias }   from "../composables/useIncidencias"
-import { useMapHeatmap }    from "../composables/useHeatmap"
+import { useLeafletMap }   from "../composables/useLeafletMap"
+import { useRouting }      from "../composables/useRouting"
+import { useMapPatrullas } from "../composables/usePatrullas"
+import { useIncidencias }  from "../composables/useIncidencias"
+import { useMapHeatmap }   from "../composables/useHeatmap"
 
-/* ------------------ REACTIVOS ------------------ */
+
 const mapContainer = ref(null)
 const tipo    = ref("todos")
 const minutos = ref("1440")
@@ -50,12 +49,10 @@ const info    = ref("Cargando...")
 
 let autoRefresh = null
 
-/* ------------------ COMPOSABLES ------------------ */
 const { map, markersLayer, patrullasLayer, miUbicacion } = useLeafletMap(mapContainer)
 
 const { routingControl, trazarRuta, trazarRutaDesdePatrulla } = useRouting(map, miUbicacion)
 
-// onRefrescar se pasa como función para evitar referencia circular
 const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
   map,
   patrullasLayer,
@@ -63,11 +60,18 @@ const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
   () => refrescarTodo()
 )
 
-const { cargarIncidencias, colorPorSeveridad } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI)
+
+
+
+// pasar despachar a useIncidencias
+const { cargarIncidencias, colorPorSeveridad } = useIncidencias(
+  map,
+  markersLayer,
+  trazarRuta,
+  asignarPatrullaAPI
+)
 
 const { heatLayer, cargarHeatmap } = useMapHeatmap(map)
-
-/* ------------------ REFRESH ------------------ */
 
 async function refrescarTodo() {
   info.value = "Actualizando..."
@@ -79,56 +83,114 @@ async function refrescarTodo() {
   const totalMarkers = await cargarIncidencias(tipo, minutos)
   const totalHeat = await cargarHeatmap()
   await cargarPatrullasVisual()
+  await cargarHeatmap(minutos.value)
 
   info.value = `
     Incidencias: ${totalMarkers}<br>
-    Heatmap puntos: ${totalHeat}<br>
     Auto refresh: 10s
   `
 }
 
-/* ------------------ LIFECYCLE ------------------ */
-
 onMounted(() => {
-  // useLeafletMap maneja initMap en su propio onMounted
   refrescarTodo()
   autoRefresh = setInterval(refrescarTodo, 10000)
 })
 
 onBeforeUnmount(() => {
   if (autoRefresh) clearInterval(autoRefresh)
-  // useLeafletMap maneja map.remove() en su propio onBeforeUnmount
+  if (map.value) map.value.closePopup()
 })
 </script>
 
 <style>
+
+.map-wrapper {
+  height: 100%;
+  position: relative;
+}
 .map {
-  height: 100vh;
+ height: 100%;
   width: 100%;
 }
+
 
 
 .panel {
   position: absolute;
-  top: 72px;        /* 60px navbar + 12px de margen */
-  right: 12px;      /* derecha en lugar de left */
-  left: unset;      /* cancela el left anterior */
+  top: 12px;
+  right: 12px;
+  left: unset;
   z-index: 9999;
-  background: rgba(255,255,255,0.95);
-  padding: 12px;
-  border-radius: 14px;
-  width: 280px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  background: rgba(255, 255, 255, 0.97);
+  padding: 16px;
+  border-radius: 16px;
+  width: 260px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: sans-serif;
 }
 
-button {
-  margin-top: 8px;
-  padding: 8px;
+.panel h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 8px;
+}
+
+.panel select {
   width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  outline: none;
+  transition: border 0.2s;
+}
+
+.panel select:focus {
+  border-color: #3b82f6;
+}
+
+.panel button {
+  margin-top: 4px;
+  padding: 8px 16px;
+  width: fit-content;
+  align-self: center;
   border-radius: 8px;
   border: none;
-  background: black;
+  background: #3b82f6;
   color: white;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.panel button:hover {
+  background: #2563eb;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+  transform: translateY(-1px);
+}
+
+.panel button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+}
+
+.panel .info {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+  margin-top: 2px;
 }
 </style>

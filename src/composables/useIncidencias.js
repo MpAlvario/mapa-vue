@@ -1,5 +1,12 @@
 import L from "leaflet"
 
+const incidenciaIcon = L.icon({
+  iconUrl: "/IconIncidencia.png",
+  iconSize: [40, 45],
+  iconAnchor: [20, 45],
+  popupAnchor: [0, -45]
+})
+
 export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI) {
 
   function colorPorSeveridad(sev) {
@@ -12,7 +19,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
   async function cargarIncidencias(tipo, minutos) {
     try {
-      const url = `http://192.168.71.15:8080/terrestre/api_incidencias.php?tipo=${encodeURIComponent(tipo.value)}&minutos=${minutos.value}&limit=400&ts=${Date.now()}`
+      const url = `http://192.168.71.54:8080/terrestre/api_incidencias.php?tipo=${encodeURIComponent(tipo.value)}&minutos=${minutos.value}&limit=400&ts=${Date.now()}`
 
       const res = await fetch(url)
       if (!res.ok) throw new Error("Servidor no responde")
@@ -31,16 +38,37 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
         const lon = parseFloat(inc.longitud)
         const sev = parseInt(inc.severidad)
 
-        const marker = L.circleMarker([lat, lon], {
-          radius: 7,
-          color: colorPorSeveridad(sev),
-          fillOpacity: 0.9
-        }).bindPopup(`
-          <b>🚨 ${inc.tipo.toUpperCase()}</b><br>
-          Severidad: ${sev}/5<br><br>
-          <button class="btnRuta">Ir a incidencia</button>
-          <button class="btnAsignar">Asinar patrulla </button>
-        `)
+        const marker = L.marker([lat, lon], { icon: incidenciaIcon })
+          .bindPopup(`
+            <div style="font-family: sans-serif; padding: 4px 0;">
+              <b style="font-size:13px; color:#1a1a2e;">🚨 ${inc.tipo.toUpperCase()}</b>
+              <p style="margin: 4px 0 10px 0; font-size:12px; color:#6b7280;">Severidad: ${sev}/5</p>
+              <div style="display:flex; gap:6px;">
+                <button class="btnRuta" style="
+                  padding: 7px 12px;
+                  border-radius: 8px;
+                  border: none;
+                  background: #3b82f6;
+                  color: white;
+                  font-size: 12px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+                ">Ir a incidencia</button>
+                <button class="btnAsignar" style="
+                  padding: 7px 12px;
+                  border-radius: 8px;
+                  border: none;
+                  background: #ef4444;
+                  color: white;
+                  font-size: 12px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  box-shadow: 0 2px 8px rgba(239,68,68,0.4);
+                ">Asignar patrulla</button>
+              </div>
+            </div>
+          `)
 
         marker.on("popupopen", (e) => {
           const popup = e.popup.getElement()
@@ -53,7 +81,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
           }
 
           if (btnAsignar) {
-            btnAsignar.onclick = () => asignarPatrullaAPI(lat, lon)
+            btnAsignar.onclick = () => asignarPatrullaAPI(lat, lon, inc.id)
           }
         })
 

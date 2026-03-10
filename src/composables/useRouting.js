@@ -13,7 +13,7 @@ export function useRouting(map, miUbicacion) {
     }
 
     try {
-      const res = await fetch("http://192.168.71.15:8080/terrestre/api_ruta.php", {
+      const res = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -35,8 +35,8 @@ export function useRouting(map, miUbicacion) {
       }
 
       const coordenadas = data.routes[0].geometry.coordinates.map(coord => [
-        coord[1], // lat
-        coord[0]  // lng
+        coord[1],
+        coord[0]
       ])
 
       if (routingControl.value) {
@@ -56,7 +56,7 @@ export function useRouting(map, miUbicacion) {
 
   async function trazarRutaDesdePatrulla(lat1, lng1, lat2, lng2) {
     try {
-      const res = await fetch("http://192.168.71.15:8080/terrestre/api_ruta.php", {
+      const res = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -73,26 +73,28 @@ export function useRouting(map, miUbicacion) {
 
       if (!data.routes || data.routes.length === 0) {
         alert("No se encontró ruta")
-        return
+        return null
       }
 
-      const coordenadas = data.routes[0].geometry.coordinates.map(coord => [
-        coord[1],
-        coord[0]
-      ])
+      // Guardamos las coordenadas en formato [lng, lat] para la animación
+      const coordenadas = data.routes[0].geometry.coordinates
 
       if (routingControl.value) {
         map.value.removeLayer(routingControl.value)
       }
 
-      routingControl.value = L.polyline(coordenadas, {
+      // Dibujamos la polyline con el formato [lat, lng] que necesita Leaflet
+      routingControl.value = L.polyline(coordenadas.map(c => [c[1], c[0]]), {
         weight: 6
       }).addTo(map.value)
 
       map.value.fitBounds(routingControl.value.getBounds())
 
+      return coordenadas // 👈 retorna [lng, lat] para useAnimarPatrulla
+
     } catch (error) {
       console.error("Error trazando ruta:", error)
+      return null
     }
   }
 

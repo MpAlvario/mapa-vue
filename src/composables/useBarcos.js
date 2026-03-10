@@ -9,7 +9,7 @@ export function useBarcos(map, popupBase, eventosPopup) {
     try {
 
       const res = await fetch(
-        "http://192.168.71.15:8080/proyecto/api_barco.php?ts=" + Date.now()
+        "http://192.168.71.54:8080/proyecto/api_barco.php?ts=" + Date.now()
       )
 
       const json = await res.json()
