@@ -82,8 +82,8 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
           if (btnAsignar) {
             btnAsignar.onclick = async () => {
-              await asignarPatrullaAPI(lat, lon, inc.id) // 👈 asigna y anima hacia la incidencia
-              await despachar(inc.id, lat, lon)          // 👈 luego regresa y queda disponible
+              await asignarPatrullaAPI(lat, lon, inc.id) // asigna y anima hacia la incidencia
+              await despachar(inc.id, lat, lon)          //  luego regresa y queda disponible
             }
           }
         })

@@ -3,7 +3,8 @@ import L from "leaflet"
 import "leaflet-routing-machine"
 import "leaflet-routing-machine/dist/leaflet-routing-machine.css"
 
-export function useRouting(map, miUbicacion) {
+export function useRouting(map, miUbicacion, miMarker, hayRuta) {
+
   const routingControl = ref(null)
 
   async function trazarRuta(destLat, destLon) {
@@ -15,9 +16,7 @@ export function useRouting(map, miUbicacion) {
     try {
       const res = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lat1: miUbicacion.value.lat,
           lng1: miUbicacion.value.lng,
@@ -27,46 +26,74 @@ export function useRouting(map, miUbicacion) {
       })
 
       const data = await res.json()
-      console.log("Respuesta API:", data)
 
       if (!data.routes || data.routes.length === 0) {
         alert("No se encontró ruta")
         return
       }
 
-      const coordenadas = data.routes[0].geometry.coordinates.map(coord => [
-        coord[1],
-        coord[0]
-      ])
-
       if (routingControl.value) {
         map.value.removeLayer(routingControl.value)
       }
 
-      routingControl.value = L.polyline(coordenadas, {
+      const coordenadas = data.routes[0].geometry.coordinates
+
+      routingControl.value = L.polyline(coordenadas.map(c => [c[1], c[0]]), {
         weight: 5
       }).addTo(map.value)
 
       map.value.fitBounds(routingControl.value.getBounds())
+
+      hayRuta.value = true //  mostrar botón
+
+      await animarMarcador(coordenadas)
 
     } catch (error) {
       console.error("Error obteniendo ruta:", error)
     }
   }
 
+  async function animarMarcador(coordenadas) {
+    if (!miMarker.value) return
+
+    await new Promise((resolve) => {
+      let i = 0
+      const intervalo = setInterval(() => {
+        if (i >= coordenadas.length) {
+          clearInterval(intervalo)
+
+          if (routingControl.value) {
+            map.value.removeLayer(routingControl.value)
+            routingControl.value = null
+          }
+
+          hayRuta.value = false 
+
+          resolve()
+          return
+        }
+        const [lng, lat] = coordenadas[i]
+        miMarker.value.setLatLng([lat, lng])
+        miUbicacion.value = L.latLng(lat, lng)
+        i++
+      }, 40)
+    })
+  }
+
+  function quitarRuta() {
+    if (routingControl.value) {
+      map.value.removeLayer(routingControl.value)
+      routingControl.value = null
+    }
+    hayRuta.value = false 
+  }
+
   async function trazarRutaDesdePatrulla(lat1, lng1, lat2, lng2) {
     try {
       const res = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          lat1: lat1,
-          lng1: lng1,
-          lat2: lat2,
-          lng2: lng2
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat1, lng1, lat2, lng2 })
       })
 
       const data = await res.json()
@@ -76,21 +103,19 @@ export function useRouting(map, miUbicacion) {
         return null
       }
 
-      // Guardamos las coordenadas en formato [lng, lat] para la animación
       const coordenadas = data.routes[0].geometry.coordinates
 
       if (routingControl.value) {
         map.value.removeLayer(routingControl.value)
       }
 
-      // Dibujamos la polyline con el formato [lat, lng] que necesita Leaflet
       routingControl.value = L.polyline(coordenadas.map(c => [c[1], c[0]]), {
         weight: 6
       }).addTo(map.value)
 
       map.value.fitBounds(routingControl.value.getBounds())
 
-      return coordenadas // 👈 retorna [lng, lat] para useAnimarPatrulla
+      return coordenadas
 
     } catch (error) {
       console.error("Error trazando ruta:", error)
@@ -101,6 +126,7 @@ export function useRouting(map, miUbicacion) {
   return {
     routingControl,
     trazarRuta,
-    trazarRutaDesdePatrulla
+    trazarRutaDesdePatrulla,
+    quitarRuta
   }
 }

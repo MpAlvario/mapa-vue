@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from "vue"
+import { ref, onMounted, onBeforeUnmount, watch } from "vue"
 
 import { useLeafletMap }   from "../composables/useLeafletMap"
 import { useRouting }      from "../composables/useRouting"
@@ -41,47 +41,38 @@ import { useMapPatrullas } from "../composables/usePatrullas"
 import { useIncidencias }  from "../composables/useIncidencias"
 import { useMapHeatmap }   from "../composables/useHeatmap"
 
-
 const mapContainer = ref(null)
 const tipo    = ref("todos")
 const minutos = ref("1440")
 const info    = ref("Cargando...")
+const hayRuta = ref(false)
 
 let autoRefresh = null
 
-const { map, markersLayer, patrullasLayer, miUbicacion } = useLeafletMap(mapContainer)
+const { map, markersLayer, patrullasLayer, miUbicacion, miMarker } = useLeafletMap(mapContainer)
 
-const { routingControl, trazarRuta, trazarRutaDesdePatrulla } = useRouting(map, miUbicacion)
+const { routingControl, trazarRuta, trazarRutaDesdePatrulla, quitarRuta } = useRouting(map, miUbicacion, miMarker, hayRuta)
 
 const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
   map,
   patrullasLayer,
   trazarRutaDesdePatrulla,
-  () => refrescarTodo()
+  () => refrescarTodo(),
+  () =>cargarHeatmap(minutos.value), //actualizar el heatmap
+  () =>cargarIncidencias(tipo, minutos)
 )
 
-
-
-
-// pasar despachar a useIncidencias
-const { cargarIncidencias, colorPorSeveridad } = useIncidencias(
-  map,
-  markersLayer,
-  trazarRuta,
-  asignarPatrullaAPI
-)
+const { cargarIncidencias, colorPorSeveridad } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
 
 const { heatLayer, cargarHeatmap } = useMapHeatmap(map)
 
 async function refrescarTodo() {
-  info.value = "Actualizando..."
+  if (!map.value || !patrullasLayer.value) return
 
-  if (map.value) {
-    map.value.closePopup()
-  }
+  info.value = "Actualizando..."
+  map.value.closePopup()
 
   const totalMarkers = await cargarIncidencias(tipo, minutos)
-  const totalHeat = await cargarHeatmap()
   await cargarPatrullasVisual()
   await cargarHeatmap(minutos.value)
 
@@ -92,32 +83,39 @@ async function refrescarTodo() {
 }
 
 onMounted(() => {
-  refrescarTodo()
-  autoRefresh = setInterval(refrescarTodo, 10000)
+  const stop = watch(map, (nuevoMapa) => {
+    if (nuevoMapa) {
+      stop()
+
+      // Cierra popups antes del zoom para evitar error 
+      nuevoMapa.on('zoomstart', () => {
+        nuevoMapa.closePopup()
+      })
+
+      refrescarTodo()
+      autoRefresh = setInterval(refrescarTodo, 10000)
+    }
+  }, { immediate: true })
 })
 
 onBeforeUnmount(() => {
   if (autoRefresh) clearInterval(autoRefresh)
-  if (map.value) map.value.closePopup()
+  if (map.value) {
+    map.value.off('zoomstart') // Limpia el listener al desmontar
+    map.value.closePopup()
+  }
 })
 </script>
 
 <style>
-
-.map-wrapper {
-  height: 100%;
-  position: relative;
-}
 .map {
- height: 100%;
+  height: 100vh;
   width: 100%;
 }
 
-
-
 .panel {
   position: absolute;
-  top: 12px;
+  top: 72px;
   right: 12px;
   left: unset;
   z-index: 9999;

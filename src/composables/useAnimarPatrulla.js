@@ -29,7 +29,7 @@ export function useAnimarPatrulla(map, patrullasLayer, onRefrescar) {
     await new Promise((resolve) => {
       const intervalo = setInterval(async () => {
 
-        // ✅ Llegó al destino
+        //  Llegó al destino
         if (i >= coordenadas.length) {
           clearInterval(intervalo)
 
