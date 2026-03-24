@@ -1,27 +1,71 @@
 <template>
   <div class="map-container">
 
-    <!-- PANEL -->
-    <div class="panel">
+    <!-- PANEL HEATMAP (izquierdo) -->
+    <div class="panel panel-left">
       <h3>Heatmap</h3>
-
-      <button class="btn-global" @click="activarHeatmapGlobal">
-        Heatmap Global
-      </button>
-
-      <button class="btn-barco" @click="activarHeatmapBarco">
-        Heatmap Barco Seleccionado
-      </button>
-
-      <button class="btn-apagar" @click="apagarHeatmap">
-        Apagar Heatmap
-      </button>
-
+      <button class="btn-global" @click="activarHeatmapGlobal">Heatmap Global</button>
+      <button class="btn-barco" @click="activarHeatmapBarco">Heatmap Barco Seleccionado</button>
+      <button class="btn-apagar" @click="apagarHeatmap">Apagar Heatmap</button>
       <div class="info">
-        Modo actual: <b>{{ modoHeatmap === 'global' ? 'Global' : 'Barco' }}</b><br>
-        Barco seleccionado: <b>{{ barcoSeleccionado ?? 'Ninguno' }}</b>
+        Modo: <b>{{ modoHeatmap === 'global' ? 'Global' : 'Barco' }}</b><br>
+        Barco: <b>{{ barcoSeleccionado ?? 'Ninguno' }}</b>
       </div>
     </div>
+
+    <!-- PANEL BARCO (derecho, colapsable) -->
+    <transition name="slide">
+      <div
+        v-if="panelBarco"
+        class="panel panel-right"
+        :class="{ 'panel-collapsed': panelColapsado }"
+      >
+
+        <!-- MODO COLAPSADO: solo muestra código + botones -->
+        <div class="panel-header">
+          <span class="panel-titulo">{{ panelBarco.codigo }}</span>
+          <div class="header-btns">
+            <button
+              class="btn-icon"
+              :title="panelColapsado ? 'Expandir info' : 'Minimizar (ver ruta)'"
+              @click="panelColapsado = !panelColapsado"
+            >
+              {{ panelColapsado ? '▲' : '▼' }}
+            </button>
+            <button class="btn-icon btn-cerrar-x" title="Cerrar" @click="cerrarPanel">✕</button>
+          </div>
+        </div>
+
+        <!-- CONTENIDO (oculto cuando colapsado) -->
+        <template v-if="!panelColapsado">
+          <div class="panel-info">
+            <div class="info-fila"><span class="label">Timestamp</span><span>{{ panelBarco.timestamp }}</span></div>
+            <div class="info-fila"><span class="label">Velocidad</span><span>{{ panelBarco.velocidad ?? 'N/A' }}</span></div>
+            <div class="info-fila"><span class="label">Rumbo</span><span>{{ panelBarco.rumbo ?? 'N/A' }}</span></div>
+            <div class="info-fila"><span class="label">Clima</span><span>{{ panelBarco.clima ?? 'N/A' }}</span></div>
+            <div class="info-fila"><span class="label">Riesgo</span><span>{{ panelBarco.riesgo_colision ?? 'N/A' }}</span></div>
+          </div>
+
+          <button class="btn-vermas" @click="verHistorial(panelBarco.codigo, true)">
+            Ver ruta histórica
+          </button>
+
+          <div v-if="historialCargando" class="hist-loading">Cargando historial...</div>
+
+          <div v-else-if="historialCargado && historialItems.length" class="hist-box">
+            <div v-for="(p, i) in historialItems" :key="i" class="hist-item">
+              <b>#{{ i + 1 }}</b> &nbsp;{{ p.timestamp }}<br>
+              <span class="coord">({{ p.latitud }}, {{ p.longitud }})</span>
+            </div>
+          </div>
+
+          <div v-else-if="historialCargado && !historialItems.length" class="hist-loading">
+            Sin historial todavía.
+          </div>
+        </template>
+
+      </div>
+    </transition>
 
     <!-- MAPA -->
     <div ref="mapRef" class="map"></div>
@@ -30,32 +74,56 @@
 </template>
 
 <script>
-
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import "leaflet.heat/dist/leaflet-heat.js"
 
 delete L.Icon.Default.prototype._getIconUrl
 
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
+const barcoIcon = L.icon({
+  iconUrl: "/Barco.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
 })
 
 export default {
   name: "MonitoreoMap",
 
+  props: {
+    activo: { type: Boolean, default: false }
+  },
+
   data() {
     return {
       map: null,
       heatLayer: null,
+      barcosData: {},
       markers: {},
       rutas: {},
+      panelBarco: null,
+      panelColapsado: false,
       barcoSeleccionado: null,
+      historialItems: [],
+      historialCargado: false,
+      historialCargando: false,
+      zoomAnterior: null,
+      centroAnterior: null,
       primerZoomHecho: false,
       modoHeatmap: "global",
-      intervalId: null
+      intervalId: null,
+    }
+  },
+
+  watch: {
+    activo(val) {
+      if (val && this.map) {
+        this.$nextTick(() => {
+          this.map.invalidateSize()
+          setTimeout(() => this.cargarHeatmap(), 200)
+        })
+      } else {
+        if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null }
+      }
     }
   },
 
@@ -63,7 +131,6 @@ export default {
     this.initMap()
     this.cargarBarcos()
     this.activarHeatmapGlobal()
-
     this.intervalId = setInterval(() => {
       this.cargarBarcos()
       this.actualizarHistorialSeleccionado()
@@ -73,12 +140,22 @@ export default {
 
   beforeUnmount() {
     clearInterval(this.intervalId)
+    this.intervalId = null
+    Object.values(this.markers).forEach(m => { m.off(); m.remove() })
+    this.markers = {}
+    Object.values(this.rutas).forEach(r => r.remove())
+    this.rutas = {}
+    if (this.heatLayer) { this.heatLayer.remove(); this.heatLayer = null }
+    if (this.map) { this.map.off(); this.map.remove(); this.map = null }
   },
 
   methods: {
 
     initMap() {
-      this.map = L.map(this.$refs.mapRef).setView([19.5, -95.5], 8)
+      const el = this.$refs.mapRef
+      if (el._leaflet_id) el._leaflet_id = null
+
+      this.map = L.map(el, { zoomAnimation: false }).setView([19.5, -95.5], 8)
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
@@ -86,269 +163,275 @@ export default {
       }).addTo(this.map)
     },
 
-    popupBase(barco) {
-      return `
-        <b>${barco.codigo}</b><br>
-        <b>Timestamp:</b> ${barco.timestamp}<br>
-        <b>Velocidad:</b> ${barco.velocidad ?? "N/A"}<br>
-        <b>Rumbo:</b> ${barco.rumbo ?? "N/A"}<br>
-        <b>Clima:</b> ${barco.clima ?? "N/A"}<br>
-        <b>Riesgo:</b> ${barco.riesgo_colision ?? "N/A"}<br>
-
-        <button class="btn-vermas">
-          Ver más...
-        </button>
-
-        <button class="btn-cerrar">
-          Cerrar
-        </button>
-
-        <div id="hist-${barco.codigo}" style="margin-top:8px;"></div>
-      `
+    abrirPanel(barco) {
+      if (this.barcoSeleccionado && this.barcoSeleccionado !== barco.codigo) {
+        if (this.rutas[this.barcoSeleccionado]) {
+          this.map.removeLayer(this.rutas[this.barcoSeleccionado])
+          delete this.rutas[this.barcoSeleccionado]
+        }
+        if (this.zoomAnterior !== null) {
+          this.map.setView(this.centroAnterior, this.zoomAnterior, { animate: false })
+          this.zoomAnterior = null
+          this.centroAnterior = null
+        }
+      }
+      this.panelBarco = { ...barco }
+      this.panelColapsado = false
+      this.barcoSeleccionado = barco.codigo
+      this.historialItems = []
+      this.historialCargado = false
+      this.historialCargando = false
+      this.primerZoomHecho = false
     },
 
-    cerrarHistorial() {
+    cerrarPanel() {
+      if (this.zoomAnterior !== null && this.centroAnterior !== null) {
+        this.map.setView(this.centroAnterior, this.zoomAnterior, { animate: false })
+        this.zoomAnterior = null
+        this.centroAnterior = null
+      }
       if (this.barcoSeleccionado && this.rutas[this.barcoSeleccionado]) {
         this.map.removeLayer(this.rutas[this.barcoSeleccionado])
         delete this.rutas[this.barcoSeleccionado]
       }
-
+      this.panelBarco = null
+      this.panelColapsado = false
       this.barcoSeleccionado = null
+      this.historialItems = []
+      this.historialCargado = false
+      this.historialCargando = false
       this.primerZoomHecho = false
     },
 
     async verHistorial(codigo, hacerZoom = true) {
-      this.barcoSeleccionado = codigo
-
-      const box = document.getElementById("hist-" + codigo)
-      if (!box) return
-
-      box.innerHTML = "Cargando..."
+      if (!this.map) return
+      this.historialCargando = true
+      this.historialCargado = false
 
       try {
         const res = await fetch(
-          "http://192.168.71.50:8080/proyecto/api_historial.php?codigo=" 
-          + codigo + "&ts=" + Date.now(), {
-           
-            credentials: "omit" //para que viaje la sesión
+          "http://192.168.71.200:8080/proyecto/api_historial.php?codigo="
+          + encodeURIComponent(codigo) + "&ts=" + Date.now()
+        )
+        const json = JSON.parse(await res.text())
+        if (!this.map) return
 
-          })
+        this.historialCargando = false
 
-        const json = await res.json()
-        const text = await res.text()
-console.log("RESPUESTA CRUDA:", text)
-
-        if (!json.ok) {
-          box.innerHTML = "Error"
+        if (!json.ok || !json.historial?.length) {
+          this.historialItems = []
+          this.historialCargado = true
           return
         }
 
-        if (!json.historial.length) {
-          box.innerHTML = "Sin historial"
-          return
-        }
+        this.historialItems = json.historial
+        this.historialCargado = true
 
-        box.innerHTML = json.historial.map((p, i) => `
-          <div>
-            <b>#${i + 1}</b><br>
-            ${p.timestamp}<br>
-            (${p.latitud}, ${p.longitud})
-          </div>
-        `).join("")
-
-        const puntos = json.historial
-          .slice()
-          .reverse()
+        const puntos = json.historial.slice().reverse()
           .map(p => [parseFloat(p.latitud), parseFloat(p.longitud)])
 
         if (this.rutas[codigo]) {
           this.rutas[codigo].setLatLngs(puntos)
         } else {
-          this.rutas[codigo] = L.polyline(puntos, { weight: 4 }).addTo(this.map)
+          this.rutas[codigo] = L.polyline(puntos, { weight: 4, color: "#0a4aa6" }).addTo(this.map)
         }
 
         if (hacerZoom && !this.primerZoomHecho) {
           this.primerZoomHecho = true
-          this.map.fitBounds(this.rutas[codigo].getBounds(), { padding: [30, 30] })
+          this.zoomAnterior = this.map.getZoom()
+          this.centroAnterior = this.map.getCenter()
+          this.map.fitBounds(this.rutas[codigo].getBounds(), { padding: [30, 30], animate: false })
         }
 
       } catch (err) {
-        box.innerHTML = "Error cargando historial"
+        console.error(err)
+        this.historialCargando = false
       }
     },
 
     async actualizarHistorialSeleccionado() {
-      if (!this.barcoSeleccionado) return
+      if (!this.map || !this.barcoSeleccionado || !this.historialCargado) return
       await this.verHistorial(this.barcoSeleccionado, false)
     },
 
-   async cargarBarcos() {
-  try {
-    const url = "http://192.168.71.50:8080/proyecto/api_barco.php?ts=" + Date.now();
-    const res = await fetch(url);
+    async cargarBarcos() {
+      if (!this.map) return
+      try {
+        const res = await fetch("http://192.168.71.200:8080/proyecto/api_barco.php?ts=" + Date.now())
+        if (!res.ok) throw new Error("HTTP " + res.status)
+        const json = await res.json()
+        if (!this.map || !json.ok) return
 
-    if (!res.ok) {
-      throw new Error("Error HTTP: " + res.status);
-    }
+        json.data.forEach(barco => {
+          const lat = parseFloat(barco.latitud)
+          const lon = parseFloat(barco.longitud)
+          if (isNaN(lat) || isNaN(lon)) return
 
-    const json = await res.json();
-    console.log("Datos barcos:", json);
+          this.barcosData[barco.codigo] = barco
+          if (this.panelBarco?.codigo === barco.codigo) {
+            this.panelBarco = { ...barco }
+          }
 
-    if (!json.ok) return;
-
-    json.data.forEach(barco => {
-
-      const lat = parseFloat(barco.latitud);
-      const lon = parseFloat(barco.longitud);
-
-      if (isNaN(lat) || isNaN(lon)) return;
-
-      // Si el marker ya existe → solo lo movemos
-      if (this.markers[barco.codigo]) {
-
-        this.markers[barco.codigo].setLatLng([lat, lon]);
-        this.markers[barco.codigo]
-          .setPopupContent(this.popupBase(barco));
-
-      } else {
-        // Si no existe → lo creamos
-        const marker = L.marker([lat, lon])
-          .addTo(this.map)
-          .bindPopup(this.popupBase(barco));
-
-        this.markers[barco.codigo] = marker;
+          if (this.markers[barco.codigo]) {
+            this.markers[barco.codigo].setLatLng([lat, lon])
+          } else {
+            const marker = L.marker([lat, lon], { icon: barcoIcon }).addTo(this.map)
+            marker._codigoBarco = barco.codigo
+            marker.on("click", () => this.abrirPanel(this.barcosData[barco.codigo]))
+            this.markers[barco.codigo] = marker
+          }
+        })
+      } catch (err) {
+        console.error("Error cargando barcos:", err)
       }
-
-    });
-
-  } catch (error) {
-    console.error("Error cargando barcos:", error);
-  }
-},
+    },
 
     apagarHeatmap() {
-      if (this.heatLayer) {
-        this.map.removeLayer(this.heatLayer)
-        this.heatLayer = null
-      }
+      if (this.heatLayer) { this.map.removeLayer(this.heatLayer); this.heatLayer = null }
     },
-
-    activarHeatmapGlobal() {
-      this.modoHeatmap = "global"
-      this.cargarHeatmap()
-    },
-
+    activarHeatmapGlobal() { this.modoHeatmap = "global"; this.cargarHeatmap() },
     activarHeatmapBarco() {
-      if (!this.barcoSeleccionado) {
-        alert("Selecciona un barco primero")
-        return
-      }
-
-      this.modoHeatmap = "barco"
-      this.cargarHeatmap()
+      if (!this.barcoSeleccionado) { alert("Selecciona un barco primero"); return }
+      this.modoHeatmap = "barco"; this.cargarHeatmap()
     },
 
     interpolarRuta(puntos, pasos = 25) {
-      let resultado = []
-
+      const r = []
       for (let i = 0; i < puntos.length - 1; i++) {
-        const p1 = puntos[i]
-        const p2 = puntos[i + 1]
-
+        const p1 = puntos[i], p2 = puntos[i + 1]
         for (let j = 0; j <= pasos; j++) {
           const t = j / pasos
-          const lat = p1[0] + (p2[0] - p1[0]) * t
-          const lon = p1[1] + (p2[1] - p1[1]) * t
-          const inten = p1[2] + (p2[2] - p1[2]) * t
-          resultado.push([lat, lon, inten])
+          r.push([p1[0]+(p2[0]-p1[0])*t, p1[1]+(p2[1]-p1[1])*t, p1[2]+(p2[2]-p1[2])*t])
         }
       }
-
-      return resultado
+      return r
     },
 
     async cargarHeatmap() {
+      if (!this.map) return
+      const c = this.map.getContainer()
+      if (!c || c.offsetWidth === 0 || c.offsetHeight === 0) return
       try {
-        let url = "http://192.168.71.50:8080/proyecto/api_heatmap.php?ts=" 
-          + Date.now()
-
-        if (this.modoHeatmap === "barco" && this.barcoSeleccionado) {
+        let url = "http://192.168.71.200:8080/proyecto/api_heatmap.php?ts=" + Date.now()
+        if (this.modoHeatmap === "barco" && this.barcoSeleccionado)
           url += "&codigo=" + this.barcoSeleccionado
-        }
-
-        const res = await fetch(url)
-        const json = await res.json()
-        if (!json.ok) return
-
+        const json = await (await fetch(url)).json()
+        if (!this.map) return
+        const c2 = this.map.getContainer()
+        if (!c2 || c2.offsetWidth === 0 || !json.ok) return
         let puntos = json.data.map(p => {
-          let intensidad = parseFloat(p.riesgo_colision)
-          if (isNaN(intensidad)) intensidad = 0.4
-
-          return [
-            parseFloat(p.latitud),
-            parseFloat(p.longitud),
-            intensidad
-          ]
+          let i = parseFloat(p.riesgo_colision)
+          return [parseFloat(p.latitud), parseFloat(p.longitud), isNaN(i) ? 0.4 : i]
         })
-
-        puntos = puntos.reverse()
-        const puntosInterpolados = this.interpolarRuta(puntos, 35)
-
-        if (this.heatLayer) {
-          this.map.removeLayer(this.heatLayer)
-        }
-
-        this.heatLayer = L.heatLayer(puntosInterpolados, {
-          radius: 8,
-          blur: 8,
-          maxZoom: 16
-        }).addTo(this.map)
-
-      } catch (err) {
-        console.error(err)
-      }
+        const interp = this.interpolarRuta(puntos.reverse(), 35)
+        if (this.heatLayer) { this.map.removeLayer(this.heatLayer); this.heatLayer = null }
+        this.heatLayer = L.heatLayer(interp, { radius: 8, blur: 8, maxZoom: 16 }).addTo(this.map)
+      } catch (err) { console.error(err) }
     }
-
   }
 }
 </script>
 
 <style scoped>
-.map-container {
-  position: relative;
-}
+.map-container { position: relative; }
+.map { height: 100vh; width: 100%; }
 
-.map {
-  height: 100vh;
-  width: 100%;
-}
-
+/* ─── Panels base ─── */
 .panel {
   position: absolute;
+  z-index: 9999;
+  background: rgba(255,255,255,0.96);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+}
+
+/* ─── Panel izquierdo ─── */
+.panel-left {
   top: 12px;
   left: 12px;
-  z-index: 9999;
-  background: rgba(255,255,255,0.95);
-  padding: 10px;
-  border-radius: 12px;
-  width: 260px;
+  width: 210px;
+}
+.panel-left h3 { margin: 0 0 6px; font-size: 14px; }
+.panel-left button {
+  width: 100%; padding: 8px; margin-top: 6px;
+  border: none; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.btn-global  { background: #051937; color: #fff; }
+.btn-barco   { background: #0a4aa6; color: #fff; }
+.btn-apagar  { background: #b00020; color: #fff; }
+.info { margin-top: 8px; font-size: 12px; color: #555; }
+
+/* ─── Panel derecho ─── */
+.panel-right {
+  top: 12px;
+  right: 12px;
+  width: 255px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Semitransparente cuando está colapsado para no distraer */
+  transition: opacity 0.2s, width 0.2s;
 }
 
-.panel button {
-  width: 100%;
-  padding: 8px;
-  margin-top: 6px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
+/* Colapsado: más angosto y semitransparente */
+.panel-collapsed {
+  width: 190px;
+  opacity: 0.75;
+  background: rgba(255,255,255,0.82);
+}
+.panel-collapsed:hover {
+  opacity: 1;
 }
 
-.btn-global { background: #111; color: white; }
-.btn-barco { background: #0a4aa6; color: white; }
-.btn-apagar { background: #b00020; color: white; }
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.panel-titulo { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.info {
-  margin-top: 8px;
-  font-size: 13px;
+.header-btns { display: flex; gap: 4px; flex-shrink: 0; }
+
+.btn-icon {
+  background: none; border: 1px solid #ddd; border-radius: 6px;
+  cursor: pointer; font-size: 12px; color: #555;
+  padding: 2px 7px; line-height: 1.4;
+  transition: background 0.15s;
+}
+.btn-icon:hover { background: #f0f0f0; }
+.btn-cerrar-x:hover { background: #fee; color: #b00020; border-color: #f5b5b5; }
+
+.panel-info { display: flex; flex-direction: column; gap: 2px; }
+.info-fila {
+  display: flex; justify-content: space-between;
+  font-size: 12px; border-bottom: 1px solid #f0f0f0; padding: 3px 0;
+}
+.label { color: #888; font-weight: 600; }
+
+.btn-vermas {
+  background: #083a88; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; font-size: 13px;
+  display: block; margin: 0 auto;
+}
+.btn-vermas:hover { background: #0d4fb3 }
+
+.hist-loading { font-size: 12px; color: #888; text-align: center; padding: 6px 0; }
+
+.hist-box { display: flex; flex-direction: column; font-size: 12px; }
+.hist-item { padding: 5px 0; border-bottom: 1px solid #eee; line-height: 1.5; }
+.coord { color: #666; }
+
+/* ─── Transición entrada/salida del panel ─── */
+.slide-enter-active, .slide-leave-active {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+.slide-enter-from, .slide-leave-to {
+  transform: translateX(24px);
+  opacity: 0;
 }
 </style>

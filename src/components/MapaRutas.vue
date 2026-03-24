@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from "vue"
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue"
 
 import { useLeafletMap }   from "../composables/useLeafletMap"
 import { useRouting }      from "../composables/useRouting"
@@ -41,15 +41,24 @@ import { useMapPatrullas } from "../composables/usePatrullas"
 import { useIncidencias }  from "../composables/useIncidencias"
 import { useMapHeatmap }   from "../composables/useHeatmap"
 
+const props = defineProps({
+  activo: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const mapContainer = ref(null)
 const tipo    = ref("todos")
 const minutos = ref("1440")
 const info    = ref("Cargando...")
 const hayRuta = ref(false)
 
+// Flag para saber si ya se hizo la carga inicial
+let cargaInicialHecha = false
 let autoRefresh = null
 
-const { map, markersLayer, patrullasLayer, miUbicacion, miMarker } = useLeafletMap(mapContainer)
+const { map, markersLayer, patrullasLayer, miUbicacion, miMarker, invalidateSize } = useLeafletMap(mapContainer)
 
 const { routingControl, trazarRuta, trazarRutaDesdePatrulla, quitarRuta } = useRouting(map, miUbicacion, miMarker, hayRuta)
 
@@ -58,13 +67,38 @@ const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
   patrullasLayer,
   trazarRutaDesdePatrulla,
   () => refrescarTodo(),
-  () =>cargarHeatmap(minutos.value), //actualizar el heatmap
-  () =>cargarIncidencias(tipo, minutos)
+  () => cargarHeatmap(minutos.value),
+  () => cargarIncidencias(tipo, minutos)
 )
 
 const { cargarIncidencias, colorPorSeveridad } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
 
 const { heatLayer, cargarHeatmap } = useMapHeatmap(map)
+
+//  FIX PRINCIPAL: cuando el componente se vuelve visible
+// 1. Invalidar tamaño del mapa
+// 2. Cargar incidencias + patrullas + heatmap (refrescarTodo)
+// 3. Arrancar autoRefresh
+watch(() => props.activo, async (val) => {
+  if (val && map.value) {
+    await nextTick()
+    invalidateSize()
+
+    // Cargar todo al hacerse visible
+    await refrescarTodo()
+
+    // Arrancar autoRefresh si no está corriendo
+    if (!autoRefresh) {
+      autoRefresh = setInterval(refrescarTodo, 10000)
+    }
+  } else {
+    // Pausar autoRefresh cuando está oculto
+    if (autoRefresh) {
+      clearInterval(autoRefresh)
+      autoRefresh = null
+    }
+  }
+})
 
 async function refrescarTodo() {
   if (!map.value || !patrullasLayer.value) return
@@ -83,26 +117,62 @@ async function refrescarTodo() {
 }
 
 onMounted(() => {
-  const stop = watch(map, (nuevoMapa) => {
+  const stop = watch(map, async (nuevoMapa) => {
     if (nuevoMapa) {
       stop()
 
-      // Cierra popups antes del zoom para evitar error 
-      nuevoMapa.on('zoomstart', () => {
+      // Cierra popups antes del zoom para evitar error
+      nuevoMapa.on("zoomstart", () => {
         nuevoMapa.closePopup()
+
+        if (markersLayer.value) {
+          markersLayer.value.eachLayer(layer => {
+            if (layer.closePopup) layer.closePopup()
+          })
+        }
+
+        if (patrullasLayer.value) {
+          patrullasLayer.value.eachLayer(layer => {
+            if (layer.closePopup) layer.closePopup()
+          })
+        }
       })
 
-      refrescarTodo()
-      autoRefresh = setInterval(refrescarTodo, 10000)
+      // FIX: si ya es visible al montar (ej: es el mapa por defecto),
+      // cargar todo inmediatamente. Si no, el watch de "activo" lo hará
+      // cuando el usuario navegue a este mapa.
+      if (props.activo) {
+        await refrescarTodo()
+        autoRefresh = setInterval(refrescarTodo, 10000)
+      }
     }
   }, { immediate: true })
 })
 
 onBeforeUnmount(() => {
-  if (autoRefresh) clearInterval(autoRefresh)
+  if (autoRefresh) {
+    clearInterval(autoRefresh)
+    autoRefresh = null
+  }
+
   if (map.value) {
-    map.value.off('zoomstart') // Limpia el listener al desmontar
     map.value.closePopup()
+
+    if (markersLayer.value) {
+      markersLayer.value.clearLayers()
+    }
+
+    if (patrullasLayer.value) {
+      patrullasLayer.value.clearLayers()
+    }
+
+    if (hayRuta.value) {
+      quitarRuta()
+    }
+
+    map.value.off()
+    map.value.remove()
+    map.value = null
   }
 })
 </script>
@@ -153,7 +223,7 @@ onBeforeUnmount(() => {
 }
 
 .panel select:focus {
-  border-color: #3b82f6;
+  border-color: #083a88;
 }
 
 .panel button {
@@ -163,17 +233,17 @@ onBeforeUnmount(() => {
   align-self: center;
   border-radius: 8px;
   border: none;
-  background: #3b82f6;
+  background: #083a88;
   color: white;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px rgba(8, 58, 136, 0.3);
   transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
 }
 
 .panel button:hover {
-  background: #2563eb;
+  background: #0d4fb3;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
   transform: translateY(-1px);
 }

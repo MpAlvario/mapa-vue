@@ -1,5 +1,20 @@
 import L from "leaflet"
 
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "",
+  iconUrl: "",
+  shadowUrl: "",
+})
+
+
+const barcoIcon = L.icon({
+  iconUrl: "/Barco.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -20],
+})
+
 export function useBarcos(map, popupBase, eventosPopup) {
 
   let markers = {}
@@ -9,7 +24,7 @@ export function useBarcos(map, popupBase, eventosPopup) {
     try {
 
       const res = await fetch(
-        "http://192.168.71.54:8080/proyecto/api_barco.php?ts=" + Date.now()
+        "http://192.168.71.200:8080/proyecto/api_barco.php?ts=" + Date.now()
       )
 
       const json = await res.json()
@@ -35,7 +50,7 @@ export function useBarcos(map, popupBase, eventosPopup) {
 
         } else {
 
-          const marker = L.marker([lat, lon])
+          const marker = L.marker([lat, lon], { icon: barcoIcon })
             .addTo(map)
             .bindPopup(popupBase(barco))
 

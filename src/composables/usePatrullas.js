@@ -14,7 +14,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
 
   async function asignarPatrullaAPI(latIncidencia, lngIncidencia, incidenciaId) {
     try {
-      const res = await fetch("http://192.168.71.54:8080/terrestre/api_despacho.php", {
+      const res = await fetch("http://192.168.71.200:8080/terrestre/api_despacho.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat: latIncidencia, lng: lngIncidencia })
@@ -23,7 +23,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       const data = await res.json()
       if (!data.success) { alert("No hay patrullas disponibles"); return }
 
-      const resPatrullas = await fetch("http://192.168.71.54:8080/terrestre/api_patrullas.php?ts=" + Date.now())
+      const resPatrullas = await fetch("http://192.168.71.200:8080/terrestre/api_patrullas.php?ts=" + Date.now())
       const jsonPatrullas = await resPatrullas.json()
       const lista = Array.isArray(jsonPatrullas) ? jsonPatrullas : jsonPatrullas.data
       const patrulla = lista.find(p => String(p.id) === String(data.patrulla_id))
@@ -33,14 +33,21 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       const latOrigen = parseFloat(patrulla.lat)
       const lngOrigen = parseFloat(patrulla.lng)
 
-      //  Quitar marker estático antes de animar
-      patrullasLayer.value.eachLayer(layer => {
-        if (layer?.options?.patrullaId === String(patrulla.id)) {
-          patrullasLayer.value.removeLayer(layer)
-        }
-      })
+      //  Quitar marker estático antes de animar  //se modifico
+      const layersAEliminar = []
 
-      const resRuta = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
+      patrullasLayer.value.eachLayer(layer => {
+      const id = layer?.options?.patrullaId
+        if (!id || !animacionesActivas.has(String(id))) {
+        layersAEliminar.push(layer)
+  }
+})
+
+layersAEliminar.forEach(layer => {
+  patrullasLayer.value.removeLayer(layer)
+})
+
+      const resRuta = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -75,10 +82,14 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
 
       animacionesActivas.add(String(patrulla.id))
 
+      // Guardar zoom y centro originales para restaurar al terminar
+      const zoomOriginal = map.value.getZoom()
+      const centroOriginal = map.value.getCenter()
+
       // ── Fase 1: ir ──
       await moverMarcador(marker, coordenadas)
 
-      await fetch("http://192.168.71.54:8080/terrestre/api_resolver_incidencia.php", {
+      await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: incidenciaId })
@@ -106,13 +117,21 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       if (map.value && map.value.hasLayer(rutaLayer)) map.value.removeLayer(rutaLayer)
       if (patrullasLayer.value) patrullasLayer.value.removeLayer(marker)
 
-      await fetch("http://192.168.71.54:8080/terrestre/api_actualizar_estado.php", {
+      await fetch("http://192.168.71.200:8080/terrestre/api_actualizar_estado.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: patrulla.id, estado: "Disponible" })
       })
 
       animacionesActivas.delete(String(patrulla.id))
+
+      // Restaurar zoom y centro originales al terminar la animación
+      if (map.value) {
+        map.value.setView(centroOriginal, zoomOriginal, {
+          animate: true,
+          duration: 1.2
+        })
+      }
 
       //  Ahora sí refresca todo — la animación ya terminó
       onRefrescar()
@@ -124,7 +143,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
 
   async function cargarPatrullasVisual() {
     try {
-      const res = await fetch("http://192.168.71.54:8080/terrestre/api_patrullas.php?ts=" + Date.now())
+      const res = await fetch("http://192.168.71.200:8080/terrestre/api_patrullas.php?ts=" + Date.now())
       const json = await res.json()
 
       const lista = Array.isArray(json) ? json : json.data
@@ -164,20 +183,38 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
     }
   }
 
+  function seguirMarcador(marker, mapInstance, zoom = 16) {
+    if (!mapInstance) return
+    mapInstance.setView(marker.getLatLng(), zoom, {
+      animate: true,
+      duration: 0.8,
+      easeLinearity: 0.5
+    })
+  }
+
   function moverMarcador(marker, coordenadas) {
     return new Promise((resolve) => {
       let i = 0
-      const intervalo = setInterval(() => {
-        if (!map.value) { clearInterval(intervalo); resolve(); return }
-        if (i >= coordenadas.length) {
-          clearInterval(intervalo)
-          resolve()
-          return
+      let ultimoTiempo = null
+      const intervalo = 120 // ms entre cada paso
+
+      function paso(timestamp) {
+        if (!map.value) { resolve(); return }
+        if (i >= coordenadas.length) { resolve(); return }
+
+        // Solo avanza si ya pasaron los ms del intervalo
+        if (!ultimoTiempo || timestamp - ultimoTiempo >= intervalo) {
+          const [lng, lat] = coordenadas[i]
+          marker.setLatLng([lat, lng])
+          seguirMarcador(marker, map.value, 16)
+          ultimoTiempo = timestamp
+          i++
         }
-        const [lng, lat] = coordenadas[i]
-        marker.setLatLng([lat, lng])
-        i++
-      }, 50)
+
+        requestAnimationFrame(paso)
+      }
+
+      requestAnimationFrame(paso)
     })
   }
 

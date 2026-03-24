@@ -6,12 +6,27 @@ export function useMapHeatmap(map) {
   const heatLayer = ref(null)
 
   async function cargarHeatmap(minutos) {
+    //  FIX 1: No intentar dibujar si el mapa no existe
+    if (!map.value) return
+
+    // FIX 2: No intentar dibujar si el contenedor tiene ancho 0
+    // (ocurre cuando el componente está oculto con v-show)
+    const container = map.value.getContainer()
+    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
+
     try {
-      const url = `http://192.168.71.54:8080/terrestre/api_heatmap.php?minutos=${minutos}&limit=1000&ts=${Date.now()}`
+      const url = `http://192.168.71.200:8080/terrestre/api_heatmap.php?minutos=${minutos}&limit=1000&ts=${Date.now()}`
       const res = await fetch(url)
       if (!res.ok) return
 
       const response = await res.json()
+
+      //  FIX 3: Segunda verificación post-await por si el mapa
+      // fue destruido o el componente se ocultó mientras esperábamos
+      if (!map.value) return
+      const containerCheck = map.value.getContainer()
+      if (!containerCheck || containerCheck.offsetWidth === 0) return
+
       if (!response.ok) return
 
       // Transformar objetos a arrays que leaflet.heat entiende

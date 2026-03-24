@@ -30,13 +30,17 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
     animacionActiva.value = true
 
+    // Guardar zoom y centro originales para restaurar al terminar
+    const zoomOriginal = map.value.getZoom()
+    const centroOriginal = map.value.getCenter()
+
     // Ocultar pin estático
     if (miMarker.value && map.value.hasLayer(miMarker.value)) {
       map.value.removeLayer(miMarker.value)
     }
 
     // Pedir ruta
-    const resRuta = await fetch("http://192.168.71.54:8080/terrestre/api_ruta.php", {
+    const resRuta = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lat1: latOrigen, lng1: lngOrigen, lat2: latIncidencia, lng2: lngIncidencia })
@@ -64,7 +68,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
     await moverMarcador(marker, coordenadas)
 
     // Resolver incidencia
-    await fetch("http://192.168.71.54:8080/terrestre/api_resolver_incidencia.php", {
+    await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: incidenciaId })
@@ -94,18 +98,48 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
     }
 
     animacionActiva.value = false
+
+    // Restaurar zoom y centro originales al terminar la animación
+    if (map.value) {
+      map.value.setView(centroOriginal, zoomOriginal, {
+        animate: true,
+        duration: 1.2
+      })
+    }
+  }
+
+  function seguirMarcador(marker, mapInstance, zoom = 16) {
+    if (!mapInstance) return
+    mapInstance.setView(marker.getLatLng(), zoom, {
+      animate: true,
+      duration: 0.8,
+      easeLinearity: 0.5
+    })
   }
 
   function moverMarcador(marker, coordenadas) {
     return new Promise(resolve => {
       let i = 0
-      const intervalo = setInterval(() => {
-        if (!map.value) { clearInterval(intervalo); resolve(); return }
-        if (i >= coordenadas.length) { clearInterval(intervalo); resolve(); return }
-        const [lng, lat] = coordenadas[i]
-        marker.setLatLng([lat, lng])
-        i++
-      }, 50)
+      let ultimoTiempo = null
+      const intervalo = 120 // ms entre cada paso
+
+      function paso(timestamp) {
+        if (!map.value || !map.value.hasLayer(marker)) { resolve(); return }
+        if (i >= coordenadas.length) { resolve(); return }
+
+        // Solo avanza si ya pasaron los ms del intervalo
+        if (!ultimoTiempo || timestamp - ultimoTiempo >= intervalo) {
+          const [lng, lat] = coordenadas[i]
+          marker.setLatLng([lat, lng])
+          seguirMarcador(marker, map.value, 16)
+          ultimoTiempo = timestamp
+          i++
+        }
+
+        requestAnimationFrame(paso)
+      }
+
+      requestAnimationFrame(paso)
     })
   }
 
@@ -124,7 +158,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
   async function cargarIncidencias(tipo, minutos) {
     try {
-      const url = `http://192.168.71.54:8080/terrestre/api_incidencias.php?tipo=${encodeURIComponent(tipo.value)}&minutos=${minutos.value}&limit=400&ts=${Date.now()}`
+      const url = `http://192.168.71.200:8080/terrestre/api_incidencias.php?tipo=${encodeURIComponent(tipo.value)}&minutos=${minutos.value}&limit=400&ts=${Date.now()}`
 
       const res = await fetch(url)
       if (!res.ok) throw new Error("Servidor no responde")
@@ -132,8 +166,10 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
       const json = await res.json()
 
       if (markersLayer.value) {
-        map.value.closePopup()
-        markersLayer.value.clearLayers()
+        const layers = []
+        markersLayer.value.eachLayer(l => layers.push(l))
+        layers.forEach(l => markersLayer.value.removeLayer(l))
+        
       }
 
       if (!json.ok || !json.data) return 0

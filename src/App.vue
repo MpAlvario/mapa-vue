@@ -8,21 +8,22 @@
 
     <!-- MAPA MÉXICO -->
     <MexicoMap
-      v-if="mapaSeleccionado === 'mexico'"
+      v-show="mapaSeleccionado === 'mexico'"
       :opcion="opcionSeleccionada"
       @update-percentiles="percentiles = $event"
     />
 
     <!-- MAPA MONITOREO -->
     <MonitoreoMap
-      v-if="mapaSeleccionado === 'monitoreo'"
+      v-show="mapaSeleccionado === 'monitoreo'"
+      :activo="mapaSeleccionado === 'monitoreo'"
     />
-    
+
     <!-- MAPA RUTAS -->
     <MapaRutas
-    v-if="mapaSeleccionado === 'rutas'"
+      v-show="mapaSeleccionado === 'rutas'"
+      :activo="mapaSeleccionado === 'rutas'"
     />
-    
 
     <!-- LEYENDA SOLO PARA MÉXICO -->
     <PopulationLegend
@@ -33,7 +34,6 @@
 
   </div>
 </template>
-
 
 <script>
 import MapaRutas from './components/MapaRutas.vue'
@@ -49,7 +49,6 @@ export default {
     MapaRutas,
     Navbar,
     PopulationLegend
-    
   },
 
   data() {
@@ -62,12 +61,18 @@ export default {
 }
 </script>
 
-
-
 <style>
 #app {
   height: 100vh;
   box-sizing: border-box;
 }
-</style>
 
+/* Marcadores Leaflet - render optimizado */
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  transition: none !important;
+  transform: translateZ(0);
+  will-change: transform;
+  image-rendering: auto;
+}
+</style>
