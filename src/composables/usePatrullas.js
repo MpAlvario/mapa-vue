@@ -1,12 +1,20 @@
 import { ref } from "vue"
 import L from "leaflet"
 
-const patrullaIcon = L.icon({
-  iconUrl: "/IconPatrulla.png",
-  iconSize: [45, 45],
-  iconAnchor: [22, 45],
-  popupAnchor: [0, -45]
-})
+function crearIconoPatrulla(estado = "Disponible") {
+
+  let clase = "patrulla-disponible"
+
+  if (estado === "En camino") clase = "patrulla-en-camino"
+  if (estado === "Atendiendo") clase = "patrulla-atendiendo"
+
+  return L.divIcon({
+    className: "contenedor-patrulla",
+    html: `<div class="patrulla ${clase}"></div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  })
+}
 
 export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, onRefrescar, onActualizarHeatmap, onRefrescarIncidencias) {
 
@@ -33,19 +41,29 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       const latOrigen = parseFloat(patrulla.lat)
       const lngOrigen = parseFloat(patrulla.lng)
 
-      //  Quitar marker estático antes de animar  //se modifico
       const layersAEliminar = []
 
       patrullasLayer.value.eachLayer(layer => {
-      const id = layer?.options?.patrullaId
-        if (!id || !animacionesActivas.has(String(id))) {
-        layersAEliminar.push(layer)
-  }
-})
+        const id = layer?.options?.patrullaId
+        if (!id || (!animacionesActivas.has(String(id)) && animacionesActivas.size === 0)) {
+          layersAEliminar.push(layer)
+        }
+      })
 
-layersAEliminar.forEach(layer => {
-  patrullasLayer.value.removeLayer(layer)
-})
+      layersAEliminar.forEach(layer => {
+        patrullasLayer.value.removeLayer(layer)
+      })
+
+      //  CREAR marker inmediatamente (FIX delay)
+      const marker = L.marker([latOrigen, lngOrigen], {
+        icon: crearIconoPatrulla("En camino"),
+        patrullaId: String(patrulla.id),
+        zIndexOffset: 1000
+      })
+        .bindPopup(`<b>🚓 Patrulla ${patrulla.id}</b><br><span style="color:#3b82f6">En camino a incidencia...</span>`)
+        .addTo(patrullasLayer.value)
+
+      animacionesActivas.add(String(patrulla.id))
 
       const resRuta = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
         method: "POST",
@@ -72,21 +90,9 @@ layersAEliminar.forEach(layer => {
         dashArray: "8, 8"
       }).addTo(map.value)
 
-      const marker = L.marker([latOrigen, lngOrigen], {
-        icon: patrullaIcon,
-        patrullaId: String(patrulla.id),
-        zIndexOffset: 1000
-      })
-        .bindPopup(`<b>🚓 Patrulla ${patrulla.id}</b><br><span style="color:#3b82f6">En camino a incidencia...</span>`)
-        .addTo(patrullasLayer.value)
-
-      animacionesActivas.add(String(patrulla.id))
-
-      // Guardar zoom y centro originales para restaurar al terminar
       const zoomOriginal = map.value.getZoom()
       const centroOriginal = map.value.getCenter()
 
-      // ── Fase 1: ir ──
       await moverMarcador(marker, coordenadas)
 
       await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
@@ -95,17 +101,16 @@ layersAEliminar.forEach(layer => {
         body: JSON.stringify({ id: incidenciaId })
       })
 
-      // Solo actualiza incidencias y heatmap 
+      //  SOLO incidencias (FIX heatmap bug)
       onRefrescarIncidencias?.()
-      onActualizarHeatmap?.()
 
       rutaLayer.setStyle({ color: "#10b981", dashArray: null, opacity: 1 })
+      marker.setIcon(crearIconoPatrulla("Atendiendo"))
       marker.getPopup().setContent(`<b>🚓 Patrulla ${patrulla.id}</b><br><span style="color:#10b981">Atendiendo incidencia...</span>`)
       marker.openPopup()
 
       await esperar(3000)
 
-      // ── Fase 2: regresar ──
       marker.closePopup()
       rutaLayer.setStyle({ color: "#f59e0b", dashArray: "8, 8", opacity: 0.7 })
       marker.getPopup().setContent(`<b>🚓 Patrulla ${patrulla.id}</b><br><span style="color:#f59e0b">Regresando a base...</span>`)
@@ -125,15 +130,13 @@ layersAEliminar.forEach(layer => {
 
       animacionesActivas.delete(String(patrulla.id))
 
-      // Restaurar zoom y centro originales al terminar la animación
-      if (map.value) {
+      if (map.value && map.value._loaded) {
         map.value.setView(centroOriginal, zoomOriginal, {
           animate: true,
           duration: 1.2
         })
       }
 
-      //  Ahora sí refresca todo — la animación ya terminó
       onRefrescar()
 
     } catch (error) {
@@ -143,6 +146,10 @@ layersAEliminar.forEach(layer => {
 
   async function cargarPatrullasVisual() {
     try {
+
+      //  NO refrescar mientras hay animación
+      if (animacionesActivas.size > 0) return
+
       const res = await fetch("http://192.168.71.200:8080/terrestre/api_patrullas.php?ts=" + Date.now())
       const json = await res.json()
 
@@ -164,7 +171,7 @@ layersAEliminar.forEach(layer => {
         if (isNaN(lat) || isNaN(lng)) return
 
         const marker = L.marker([lat, lng], {
-          icon: patrullaIcon,
+          icon: crearIconoPatrulla(p.estado),
           patrullaId: String(p.id)
         }).bindPopup(`
           <div style="font-family: sans-serif; padding: 4px 0;">
@@ -184,11 +191,12 @@ layersAEliminar.forEach(layer => {
   }
 
   function seguirMarcador(marker, mapInstance, zoom = 16) {
-    if (!mapInstance) return
+    if (!mapInstance || !mapInstance._loaded) return
+    if (!marker) return
+
     mapInstance.setView(marker.getLatLng(), zoom, {
       animate: true,
-      duration: 0.8,
-      easeLinearity: 0.5
+      duration: 0.8
     })
   }
 
@@ -196,13 +204,12 @@ layersAEliminar.forEach(layer => {
     return new Promise((resolve) => {
       let i = 0
       let ultimoTiempo = null
-      const intervalo = 120 // ms entre cada paso
+      const intervalo = 120
 
       function paso(timestamp) {
         if (!map.value) { resolve(); return }
         if (i >= coordenadas.length) { resolve(); return }
 
-        // Solo avanza si ya pasaron los ms del intervalo
         if (!ultimoTiempo || timestamp - ultimoTiempo >= intervalo) {
           const [lng, lat] = coordenadas[i]
           marker.setLatLng([lat, lng])

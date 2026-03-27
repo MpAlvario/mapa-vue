@@ -3,14 +3,7 @@
     <div class="card-wrapper">
       <div class="card">
         <div class="logo">
-          <svg viewBox="0 0 120 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="4" y="38" font-family="'Courier New', monospace" font-size="34"
-              fill="none" stroke="#8fa8c8" stroke-width="1.5" letter-spacing="-1">map</text>
-            <text x="58" y="55" font-family="'Courier New', monospace" font-size="28"
-              fill="none" stroke="#8fa8c8" stroke-width="1.5" letter-spacing="-1">hub</text>
-            <circle cx="10" cy="12" r="4" stroke="#8fa8c8" stroke-width="1.5" fill="none"/>
-            <line x1="10" y1="16" x2="10" y2="24" stroke="#8fa8c8" stroke-width="1.5"/>
-          </svg>
+           <img src="/LogoClaro.png" alt="MapHub" />
         </div>
 
         <div class="fields">
@@ -93,10 +86,28 @@ export default {
 <style scoped>
 .page-bg {
   min-height: 100vh;
-  background: #d4d4d4;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.page-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/FondoLogin.png');
+  background-size: cover;
+  background-position: center;
+  filter: blur(4px) brightness(0.6);
+  transform: scale(1.05);
+  z-index: 0;
+}
+
+.card-wrapper {
+  position: relative;
+  z-index: 1;
 }
 .card {
   background: #1e3a6e;
@@ -110,6 +121,12 @@ export default {
   box-shadow: 0 8px 32px rgba(0,0,0,0.25);
 }
 .logo svg { width: 120px; height: 60px; }
+.logo img {
+  width: 140px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.7;
+}
 .fields { width: 100%; display: flex; flex-direction: column; gap: 12px; }
 .field-group { display: flex; flex-direction: column; gap: 5px; }
 label {

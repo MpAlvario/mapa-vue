@@ -1,12 +1,57 @@
 import L from "leaflet"
 import { ref } from "vue"
 
-const incidenciaIcon = L.icon({
-  iconUrl: "/IconIncidencia.png",
-  iconSize: [40, 45],
-  iconAnchor: [20, 45],
-  popupAnchor: [0, -45]
-})
+// ── Colores por tipo de incidencia ─────────────────────────────
+const COLORES_INCIDENCIA = {
+  robo:                 { color: "#E24B4A", borde: "#A32D2D" },
+  asalto:               { color: "#A32D2D", borde: "#7a1e1e" },
+  choque:               { color: "#EF9F27", borde: "#BA7517" },
+  atropellamiento:      { color: "#BA7517", borde: "#8a5510" },
+  volcadura:            { color: "#FAC775", borde: "#BA7517" },
+  incendio:             { color: "#D85A30", borde: "#a03d1c" },
+  inundacion:           { color: "#378ADD", borde: "#1f5fa8" },
+  inundación:           { color: "#378ADD", borde: "#1f5fa8" },
+  vehiculo_descompuesto:{ color: "#888780", borde: "#5a5955" },
+}
+
+const COLOR_DEFAULT = { color: "#888780", borde: "#5a5955" }
+
+function iconoPorTipo(tipo) {
+  const tipoNorm = tipo?.toLowerCase().trim() ?? ""
+  const { color, borde } = COLORES_INCIDENCIA[tipoNorm] ?? COLOR_DEFAULT
+
+  // Figuras SVG por categoría
+  const figuras = {
+    // ── Círculo: accidentes viales ──────────────────────────────
+    choque:          `<circle cx="14" cy="14" r="11" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+    atropellamiento: `<circle cx="14" cy="14" r="11" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+    volcadura:       `<circle cx="14" cy="14" r="11" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+
+    // ── Triángulo: violencia / seguridad ────────────────────────
+    robo:   `<polygon points="14,2 26,25 2,25" fill="${color}" stroke="${borde}" stroke-width="2.5" stroke-linejoin="round"/>`,
+    asalto: `<polygon points="14,2 26,25 2,25" fill="${color}" stroke="${borde}" stroke-width="2.5" stroke-linejoin="round"/>`,
+
+    // ── Rombo: fuego ────────────────────────────────────────────
+    incendio: `<polygon points="14,2 26,14 14,26 2,14" fill="${color}" stroke="${borde}" stroke-width="2.5" stroke-linejoin="round"/>`,
+
+    // ── Cuadrado: fenómenos hídricos ────────────────────────────
+    inundacion: `<rect x="3" y="3" width="22" height="22" rx="3" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+    inundación: `<rect x="3" y="3" width="22" height="22" rx="3" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+
+    // ── Rectángulo plano: operativos menores ────────────────────
+    vehiculo_descompuesto: `<rect x="2" y="8" width="24" height="12" rx="3" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`,
+  }
+
+  const shape = figuras[tipoNorm] ?? `<circle cx="14" cy="14" r="11" fill="${color}" stroke="${borde}" stroke-width="2.5"/>`
+
+  return L.divIcon({
+    className: "",
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 28 28">${shape}</svg>`,
+    iconSize:    [20, 20], //Tamaño del área del marker
+    iconAnchor:  [10, 10], //Debe ser siempre la mitad de iconSize
+    popupAnchor: [0, -18]  //Ajusta donde aparece el popup
+  })
+}
 
 // Reutiliza el mismo icono de patrulla para el marcador animado
 const patrullaIcon = L.icon({
@@ -30,6 +75,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
     animacionActiva.value = true
 
+    
     // Guardar zoom y centro originales para restaurar al terminar
     const zoomOriginal = map.value.getZoom()
     const centroOriginal = map.value.getCenter()
@@ -179,7 +225,8 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
         const lon = parseFloat(inc.longitud)
         const sev = parseInt(inc.severidad)
 
-        const marker = L.marker([lat, lon], { icon: incidenciaIcon })
+        // ── Marker con ícono circular por tipo ──────────────────
+        const marker = L.marker([lat, lon], { icon: iconoPorTipo(inc.tipo) })
           .bindPopup(`
             <div style="font-family: sans-serif; padding: 4px 0;">
               <b style="font-size:13px; color:#1a1a2e;">🚨 ${inc.tipo.toUpperCase()}</b>
@@ -213,16 +260,35 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
         marker.on("popupopen", (e) => {
           const popup = e.popup.getElement()
-          const btnRuta   = popup.querySelector(".btnRuta")
+          const btnRuta    = popup.querySelector(".btnRuta")
           const btnAsignar = popup.querySelector(".btnAsignar")
 
           if (btnRuta) {
-            // <- Ahora llama irAIncidencia en vez de trazarRuta
             btnRuta.onclick = () => irAIncidencia(lat, lon, inc.id)
           }
 
           if (btnAsignar) {
-            btnAsignar.onclick = () => asignarPatrullaAPI(lat, lon, inc.id)
+            btnAsignar.onclick = async () => {
+              if (!map.value) return
+
+              map.value.closePopup()
+
+              btnAsignar.disabled = true
+              btnAsignar.innerText = "Asignando..."
+
+              console.time("asignarPatrulla")
+
+              try {
+                const res = await asignarPatrullaAPI(lat, lon, inc.id)
+                //await irAIncidencia(lat, lon, inc.id)
+              } catch (e) {
+                console.error(e)
+              }
+
+              console.timeEnd("asignarPatrulla")
+
+              btnAsignar.innerText = "Asignado"
+            }
           }
         })
 

@@ -4,6 +4,8 @@
     <Navbar
       v-model="opcionSeleccionada"
       v-model:mapaSeleccionado="mapaSeleccionado"
+      v-model:panelActivo="panelActivo"
+      v-model:vistaActiva="vistaActiva"
     />
 
     <!-- MAPA MÉXICO -->
@@ -23,6 +25,8 @@
     <MapaRutas
       v-show="mapaSeleccionado === 'rutas'"
       :activo="mapaSeleccionado === 'rutas'"
+      :panelActivo="panelActivo"
+      :vistaActiva="vistaActiva"
     />
 
     <!-- LEYENDA SOLO PARA MÉXICO -->
@@ -55,7 +59,10 @@ export default {
     return {
       opcionSeleccionada: 'poblacion',
       mapaSeleccionado: 'mexico',
-      percentiles: null
+      percentiles: null,
+      panelActivo:null,
+      vistaActiva:null
+
     }
   }
 }

@@ -1,6 +1,7 @@
 <template>
   <div class="map-wrapper">
-    <div class="panel">
+    
+<div class="panel" v-show="panelActivo === 'incidencias'">
       <h3>🚨 Incidencias - Veracruz</h3>
 
       <select v-model="tipo">
@@ -29,6 +30,7 @@
     </div>
 
     <div ref="mapContainer" class="map"></div>
+  <LeyendaIncidencias />
   </div>
 </template>
 
@@ -40,12 +42,13 @@ import { useRouting }      from "../composables/useRouting"
 import { useMapPatrullas } from "../composables/usePatrullas"
 import { useIncidencias }  from "../composables/useIncidencias"
 import { useMapHeatmap }   from "../composables/useHeatmap"
+import LeyendaIncidencias from "../components/LeyendaIncidencias.vue"
 
 const props = defineProps({
-  activo: {
-    type: Boolean,
-    default: false
-  }
+  activo:      { type: Boolean, default: false },
+  panelActivo: { type: String,  default: null  },
+  vistaActiva: { type: String,  default: 'markers' }
+
 })
 
 const mapContainer = ref(null)
@@ -100,6 +103,18 @@ watch(() => props.activo, async (val) => {
   }
 })
 
+watch(() => props.vistaActiva, (vista) => {
+  if (!map.value) return
+
+  if (vista === 'heatmap') {
+    if (markersLayer.value) map.value.removeLayer(markersLayer.value)
+    if (heatLayer.value) map.value.addLayer(heatLayer.value)
+  } else {
+    if (heatLayer.value) map.value.removeLayer(heatLayer.value)
+    if (markersLayer.value) map.value.addLayer(markersLayer.value)
+  }
+})
+
 async function refrescarTodo() {
   if (!map.value || !patrullasLayer.value) return
 
@@ -108,7 +123,11 @@ async function refrescarTodo() {
 
   const totalMarkers = await cargarIncidencias(tipo, minutos)
   await cargarPatrullasVisual()
-  await cargarHeatmap(minutos.value)
+
+  // SOLO cargar lo que corresponde a la vista activa
+  if (props.vistaActiva === 'heatmap') {
+    await cargarHeatmap(minutos.value)
+  }
 
   info.value = `
     Incidencias: ${totalMarkers}<br>
@@ -119,6 +138,13 @@ async function refrescarTodo() {
 onMounted(() => {
   const stop = watch(map, async (nuevoMapa) => {
     if (nuevoMapa) {
+      if (props.vistaActiva === 'heatmap') {
+  if (markersLayer.value) markersLayer.value.remove()
+  if (heatLayer.value) heatLayer.value.addTo(map.value)
+} else {
+  if (heatLayer.value) heatLayer.value.remove()
+  if (markersLayer.value) markersLayer.value.addTo(map.value)
+}
       stop()
 
       // Cierra popups antes del zoom para evitar error
@@ -146,6 +172,8 @@ onMounted(() => {
         autoRefresh = setInterval(refrescarTodo, 10000)
       }
     }
+
+    
   }, { immediate: true })
 })
 
@@ -260,5 +288,119 @@ onBeforeUnmount(() => {
   border-top: 1px solid #e5e7eb;
   padding-top: 8px;
   margin-top: 2px;
+}
+
+.contenedor-patrulla {
+  background: transparent;
+  border: none;
+}
+
+/* BASE */
+.patrulla {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  position: relative;
+}
+
+/*  DISPONIBLE (con pulso tipo radar) */
+.patrulla-disponible {
+  background: #054dc1;
+}
+
+.patrulla-disponible::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.5);
+  animation: pulso 1.5s infinite;
+  top: 0;
+  left: 0;
+}
+
+/* 🟠 ATENDIENDO (pulso más lento y suave) */
+.patrulla-atendiendo {
+  background: #808080;
+}
+
+.patrulla-atendiendo::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.4);
+  animation: pulso-lento 2s infinite;
+  top: 0;
+  left: 0;
+}
+
+/* 🔵🔴 EN CAMINO (SIRENA REAL + PULSO) */
+.patrulla-en-camino {
+  background: linear-gradient(90deg, red 50%, blue 50%);
+  animation: sirenaColor 0.5s infinite;
+}
+
+/* pulso externo */
+.patrulla-en-camino::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.4);
+  animation: pulso 1s infinite;
+  top: 0;
+  left: 0;
+}
+
+/* 🔴🔵 CAMBIO DE COLOR tipo sirena */
+@keyframes sirenaColor {
+  0% {
+    background: red;
+    box-shadow: 0 0 12px red;
+  }
+  50% {
+    background: blue;
+    box-shadow: 0 0 12px blue;
+  }
+  100% {
+    background: red;
+    box-shadow: 0 0 12px red;
+  }
+}
+
+/* 💚 Pulso rápido */
+@keyframes pulso {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 🟠 Pulso lento */
+@keyframes pulso-lento {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  70% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
 }
 </style>
