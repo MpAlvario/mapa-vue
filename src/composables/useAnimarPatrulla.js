@@ -1,5 +1,6 @@
 // useAnimarPatrulla.js
 import L from "leaflet"
+import { API } from "@/config/api"
 
 const patrullaIcon = L.icon({
   iconUrl: "/IconPatrulla.png",
@@ -40,14 +41,14 @@ export function useAnimarPatrulla(map, patrullasLayer, onRefrescar) {
           }
 
           // 1. Marcar incidencia como resuelta
-          await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
+          await fetch(API.terrestre.resolverIncidencia(), { //link url
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: incidenciaId })
           })
 
           // 2. Cambiar estado patrulla a "Atendiendo"
-          await fetch("http://192.168.71.200:8080/terrestre/api_actualizar_estado.php", {
+          await fetch(API.terrestre.actualizarEstado(), { //link url
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: patrulla.id, estado: "Atendiendo" })
@@ -55,7 +56,7 @@ export function useAnimarPatrulla(map, patrullasLayer, onRefrescar) {
 
           // 3. Después de 10s volver a "Disponible" y refrescar mapa
           setTimeout(async () => {
-            await fetch("http://192.168.71.200:8080/terrestre/api_actualizar_estado.php", {
+            await fetch(API.terrestre.actualizarEstado(), { //link url
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: patrulla.id, estado: "Disponible" })

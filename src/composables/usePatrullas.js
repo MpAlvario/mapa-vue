@@ -1,5 +1,6 @@
 import { ref } from "vue"
 import L from "leaflet"
+import { API } from "@/config/api"
 
 function crearIconoPatrulla(estado = "Disponible") {
 
@@ -22,7 +23,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
 
   async function asignarPatrullaAPI(latIncidencia, lngIncidencia, incidenciaId) {
     try {
-      const res = await fetch("http://192.168.71.200:8080/terrestre/api_despacho.php", {
+      const res = await fetch(API.terrestre.despacho(), { //Link Url
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat: latIncidencia, lng: lngIncidencia })
@@ -31,7 +32,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       const data = await res.json()
       if (!data.success) { alert("No hay patrullas disponibles"); return }
 
-      const resPatrullas = await fetch("http://192.168.71.200:8080/terrestre/api_patrullas.php?ts=" + Date.now())
+      const resPatrullas = await fetch(`${API.terrestre.patrullas()}?ts=${Date.now()}`) //Link Url
       const jsonPatrullas = await resPatrullas.json()
       const lista = Array.isArray(jsonPatrullas) ? jsonPatrullas : jsonPatrullas.data
       const patrulla = lista.find(p => String(p.id) === String(data.patrulla_id))
@@ -68,7 +69,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       console.log("DESTINO:", latIncidencia, lngIncidencia)
       
 
-      const resRuta = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
+      const resRuta = await fetch(API.terrestre.ruta(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -101,7 +102,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
 
       await moverMarcador(marker, coordenadas)
 
-      await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
+      await fetch(API.terrestre.resolverIncidencia(), { //Link Url
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: incidenciaId })
@@ -132,7 +133,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
       if (map.value && map.value.hasLayer(rutaLayer)) map.value.removeLayer(rutaLayer)
       if (patrullasLayer.value) patrullasLayer.value.removeLayer(marker)
 
-      await fetch("http://192.168.71.200:8080/terrestre/api_actualizar_estado.php", {
+      await fetch(API.terrestre.actualizarEstado(), { //Link Url
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: patrulla.id, estado: "Disponible" })

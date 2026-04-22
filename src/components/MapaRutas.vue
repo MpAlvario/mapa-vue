@@ -3,7 +3,7 @@
     <div class="map-wrapper">
       
       <div class="panel" v-show="panelActivo === 'incidencias'">
-        <h3>🚨 Incidencias - Veracruz</h3>
+        <h3>🚨 Incidentes - Veracruz</h3>
         <select v-model="tipo">
           <option value="todos">Todos</option>
           <option value="choque">Choque</option>
@@ -30,11 +30,18 @@
 
       <div ref="mapContainer" class="map"></div>
 
+      <MapPolygonZones
+        v-if="map"
+       :map="map"
+       :visible="props.vistaActiva === 'poligonos'"
+       :incidencias="incidencias|| []"
+        />
+
       <button class="btn-dashboard" @click="dashVisibleLocal = true">📊 Estadísticas</button>
 
       <DashboardModal 
         v-model:visible="dashVisibleLocal" 
-        api-url="http://192.168.71.200:8080/terrestre2/api_incidencias.php?minutos=1440" 
+        :api-url="API.terrestre.incidencias()" 
       />
 
       <LeyendaIncidencias v-if="props.vistaActiva !== 'heatmap'" />
@@ -45,6 +52,7 @@
 </template>
 
 <script setup>
+import { API } from "@/config/api"
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue"
 
 import { useLeafletMap }   from "../composables/useLeafletMap"
@@ -55,7 +63,9 @@ import { useMapHeatmap }   from "../composables/useHeatmap"
 import { useCluster }      from "../composables/useCluster"          // ← NUEVO
 import LeyendaIncidencias  from "../components/LeyendaIncidencias.vue"
 import DashboardModal from "./DashboardModal.vue"
+import MapPolygonZones from "../components/MapPolygonZones.vue" //nuevo
 
+const incidencias = ref([])
 
 const props = defineProps({
   activo:       { type: Boolean, default: false },
@@ -102,7 +112,7 @@ const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
 )
 
 // Vista markers — sin cambios
-const { cargarIncidencias, colorPorSeveridad } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
+const { cargarIncidencias, colorPorSeveridad, incidenciasData } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
 
 // Vista heatmap — sin cambios
 const { heatLayer, cargarHeatmap } = useMapHeatmap(map)
@@ -126,6 +136,12 @@ function aplicarVista(vista) {
   if (markersLayer.value  && map.value.hasLayer(markersLayer.value))  map.value.removeLayer(markersLayer.value)
   if (heatLayer.value     && map.value.hasLayer(heatLayer.value))     map.value.removeLayer(heatLayer.value)
   ocultarCluster()
+
+  if (vista === 'poligonos') {
+    // No hacemos nada aquí porque el componente MapPolygonZones
+    // se encarga solo con :visible
+    return
+  }
 
   // Mostrar solo la vista activa
   if (vista === 'heatmap') {
@@ -165,22 +181,32 @@ async function refrescarTodo() {
   info.value = "Actualizando..."
   map.value.closePopup()
 
-  // Cargar datos según la vista activa
   let totalMarkers = 0
 
   if (props.vistaActiva === 'heatmap') {
-    totalMarkers = await cargarIncidencias(tipo, minutos)   // heatmap usa los mismos datos
+    totalMarkers = await cargarIncidencias(tipo.value, minutos.value)
     await cargarHeatmap(minutos.value)
   } else if (props.vistaActiva === 'cluster') {
-    totalMarkers = await cargarIncidenciasCluster(tipo, minutos)
+    totalMarkers = await cargarIncidenciasCluster(tipo.value, minutos.value)
   } else {
-    totalMarkers = await cargarIncidencias(tipo, minutos)
+    totalMarkers = await cargarIncidencias(tipo.value, minutos.value)
   }
+
+  //  Mapear DESPUÉS de que cargarIncidencias terminó
+  incidencias.value = incidenciasData.value.map(i => ({
+    lat: parseFloat(i.latitud),
+    lng: parseFloat(i.longitud),
+    tipo: i.tipo,
+    zona: i.zona,
+    severidad: i.severidad
+  }))
+
+  console.log('Incidencias mapeadas:', incidencias.value.length) // debe ser 20
 
   await cargarPatrullasVisual()
 
   info.value = `
-    Incidencias: ${totalMarkers}<br>
+    Incidentes: ${totalMarkers}<br>
     Auto refresh: 10s
   `
 }

@@ -1,6 +1,7 @@
 import { ref } from "vue"
 import L from "leaflet"
 import "leaflet.heat"
+import { API } from "@/config/api"
 
 export function useMapHeatmap(map) {
   const heatLayer = ref(null)
@@ -15,7 +16,7 @@ export function useMapHeatmap(map) {
     if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
 
     try {
-      const url = `http://192.168.71.200:8080/terrestre/api_heatmap.php?minutos=${minutos}&limit=1000&ts=${Date.now()}`
+      const url = `${API.terrestre.heatmap()}?minutos=${minutos}&limit=1000&ts=${Date.now()}` //link Url
       const res = await fetch(url)
       if (!res.ok) return
 

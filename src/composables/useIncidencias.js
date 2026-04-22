@@ -1,5 +1,8 @@
 import L from "leaflet"
 import { ref } from "vue"
+import { API } from "@/config/api"
+
+const incidenciasData = ref([])
 
 // ── Colores por tipo de incidencia ─────────────────────────────
 const COLORES_INCIDENCIA = {
@@ -86,7 +89,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
     }
 
     // Pedir ruta
-    const resRuta = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
+    const resRuta = await fetch(API.terrestre.ruta(), { //Link Url
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lat1: latOrigen, lng1: lngOrigen, lat2: latIncidencia, lng2: lngIncidencia })
@@ -114,7 +117,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
     await moverMarcador(marker, coordenadas)
 
     // Resolver incidencia
-    await fetch("http://192.168.71.200:8080/terrestre/api_resolver_incidencia.php", {
+    await fetch(API.terrestre.resolverIncidencia(), { //Link Url
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: incidenciaId })
@@ -204,19 +207,24 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
   async function cargarIncidencias(tipo, minutos) {
     try {
-      const url = `http://192.168.71.200:8080/terrestre/api_incidencias.php?tipo=${encodeURIComponent(tipo.value)}&minutos=${minutos.value}&limit=400&ts=${Date.now()}`
-
+      //link
+      const url = `${API.terrestre.incidencias()}?tipo=${encodeURIComponent(tipo)}&minutos=${minutos}&limit=400&ts=${Date.now()}`
+     console.log("URL FINAL:", url)
       const res = await fetch(url)
       if (!res.ok) throw new Error("Servidor no responde")
 
       const json = await res.json()
+      console.log("RESPUESTA API:", json)
+console.log("TOTAL DATA:", json?.data?.length)
+console.log("INCIDENCIAS CON ZONA:", json.data.slice(0,5))
+
+      if (json.ok && json.data) {
+      incidenciasData.value = json.data
+}
 
       if (markersLayer.value) {
-        const layers = []
-        markersLayer.value.eachLayer(l => layers.push(l))
-        layers.forEach(l => markersLayer.value.removeLayer(l))
-        
-      }
+      markersLayer.value.clearLayers()
+}
 
       if (!json.ok || !json.data) return 0
 
@@ -305,6 +313,7 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
 
   return {
     cargarIncidencias,
-    colorPorSeveridad
+    colorPorSeveridad,
+    incidenciasData
   }
 }

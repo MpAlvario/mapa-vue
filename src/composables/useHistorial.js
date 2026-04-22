@@ -1,4 +1,5 @@
 import L from "leaflet"
+import { API } from "@/config/api"
 
 export function useHistorial(map){
 
@@ -26,10 +27,7 @@ export function useHistorial(map){
       console.log("CODIGO ENVIADO:", codigo)
 
       const res = await fetch(
-        "http://192.168.71.200:8080/proyecto/api_historial.php?codigo="
-        + encodeURIComponent(codigo)
-        + "&ts="
-        + Date.now()
+        `${API.proyecto.historial()}?codigo=${encodeURIComponent(codigo)}&ts=${Date.now()}`  //link URl
       )
 
       const json = await res.json()

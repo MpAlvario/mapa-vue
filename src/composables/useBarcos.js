@@ -1,4 +1,5 @@
 import L from "leaflet"
+import { API } from "@/config/api"
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -24,7 +25,7 @@ export function useBarcos(map, popupBase, eventosPopup) {
     try {
 
       const res = await fetch(
-        "http://192.168.71.200:8080/proyecto/api_barco.php?ts=" + Date.now()
+        `${API.proyecto.barcos()}?ts=${Date.now()}`//link Url
       )
 
       const json = await res.json()

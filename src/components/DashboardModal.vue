@@ -129,12 +129,13 @@
 </template>
 
 <script setup>
+import { API } from "@/config/api"
 import { ref, watch, nextTick } from "vue"
 import { useDashboard } from "../composables/useDashboard"
 
 const props = defineProps({
   visible:  { type: Boolean, default: false },
-  apiUrl:   { type: String,  default: "http://192.168.71.200:8080/terrestre2/api_incidencias.php" },
+  apiUrl:   { type: String,  default: API.terrestre.incidencias() }, //api link
 })
 
 const emit = defineEmits(["update:visible"])

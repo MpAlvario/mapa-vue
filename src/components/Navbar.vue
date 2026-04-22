@@ -47,7 +47,7 @@
           :class="{ active: panelActivo === 'incidencias' }"
           @click="togglePanel('incidencias')"
         >
-          Incidencias
+          Incidentes
           <span class="btn-arrow">▼</span>
         </button>
 
@@ -106,6 +106,18 @@
                 <span>Clusters</span>
                 <span v-if="vistaActiva === 'cluster'" class="check">✓</span>
               </button>
+
+              <!--Botón nuevo Poligonos-->
+              <button
+              class="dropdown-item"
+              :class="{ selected: vistaActiva === 'poligonos' }"
+              @click="seleccionarVista('poligonos')"
+              >
+                 <span class="item-icon">🔷</span>
+                 <span>Polígonos</span>
+                 <span v-if="vistaActiva === 'poligonos'" class="check">✓</span>
+              </button>
+              
             </div>
           </transition>
         </div>

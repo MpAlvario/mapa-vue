@@ -2,6 +2,7 @@ import { ref } from "vue"
 import L from "leaflet"
 import "leaflet-routing-machine"
 import "leaflet-routing-machine/dist/leaflet-routing-machine.css"
+import { API } from "@/config/api"
 
 export function useRouting(map, miUbicacion, miMarker, hayRuta) {
 
@@ -14,7 +15,7 @@ export function useRouting(map, miUbicacion, miMarker, hayRuta) {
     }
 
     try {
-      const res = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
+      const res = await fetch(API.terrestre.ruta(), { //Link Url
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -90,7 +91,7 @@ export function useRouting(map, miUbicacion, miMarker, hayRuta) {
 
   async function trazarRutaDesdePatrulla(lat1, lng1, lat2, lng2) {
     try {
-      const res = await fetch("http://192.168.71.200:8080/terrestre/api_ruta.php", {
+      const res = await fetch(API.terrestre.ruta(), { //Link Url
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat1, lng1, lat2, lng2 })
