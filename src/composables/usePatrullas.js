@@ -28,7 +28,7 @@ export function useMapPatrullas(map, patrullasLayer, trazarRutaDesdePatrulla, on
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat: latIncidencia, lng: lngIncidencia })
       })
-
+       
       const data = await res.json()
       if (!data.success) { alert("No hay patrullas disponibles"); return }
 

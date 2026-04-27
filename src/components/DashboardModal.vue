@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
     <div v-if="visible" class="dm-overlay" @click.self="cerrar">
-      <div class="dm-modal">
+      <div class="dm-modal" ref="modalRef">
 
         <div class="dm-header">
-          <span class="dm-title">Estadísticas de incidencias</span>
+          <span class="dm-title">📊 Estadísticas de incidentes</span>
           <div class="dm-header-right">
             <select v-model="minutos" @change="recargar" class="dm-select">
               <option value="60">Última hora</option>
@@ -12,6 +12,10 @@
               <option value="720">12 horas</option>
               <option value="1440">24 horas</option>
             </select>
+            <button class="dm-btn-pdf" @click="exportarPDF" :disabled="exportando">
+              <span class="dm-btn-pdf-icon">📄</span>
+              {{ exportando ? 'Generando...' : 'Exportar PDF' }}
+            </button>
             <button class="dm-close" @click="cerrar">✕</button>
           </div>
         </div>
@@ -56,16 +60,7 @@
 
             <div class="dm-card">
               <p class="dm-card-title">Incidencias por tipo</p>
-              <div class="dm-legend">
-                <span
-                  v-for="(label, i) in stats.tipoLabels"
-                  :key="label"
-                  class="dm-legend-item"
-                >
-                  <span class="dm-legend-dot" :style="{ background: stats.tipoColores[i] ?? '#888' }"></span>
-                  {{ label }} ({{ stats.tipoCounts[i] }})
-                </span>
-              </div>
+              
               <div style="position:relative;height:200px;">
                 <canvas ref="chartTipo"></canvas>
               </div>
@@ -138,12 +133,16 @@ const props = defineProps({
   apiUrl:   { type: String,  default: API.terrestre.incidencias() }, //api link
 })
 
+
 const emit = defineEmits(["update:visible"])
 
 const minutos    = ref("1440")
 const chartTipo  = ref(null)
 const chartSev   = ref(null)
 const chartZona  = ref(null)
+// Agrega junto a tus otros refs
+const exportando = ref(false)
+const modalRef   = ref(null)  // ref al div dm-modal 
 
 let instTipo = null
 let instSev  = null
@@ -169,45 +168,129 @@ async function renderCharts() {
   const s = stats.value
 
   instTipo = new window.Chart(chartTipo.value, {
-    type: "doughnut",
-    data: {
-      labels: s.tipoLabels,
-      datasets: [{
-        data: s.tipoCounts,
-        backgroundColor: s.tipoColores,
-        borderWidth: 0,
-      }],
+  type: "doughnut",
+  plugins: [window.ChartDataLabels],
+  data: {
+    labels: s.tipoLabels,
+    datasets: [{
+      data: s.tipoCounts,
+      backgroundColor: s.tipoColores,
+      borderWidth: 2,
+      borderColor: '#fff',
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '55%',
+    plugins: {
+      legend: {
+        display: true,
+        position: 'right',
+        labels: {
+          boxWidth: 10,
+          boxHeight: 10,
+          borderRadius: 3,
+          padding: 8,
+          font: { size: 10 },
+          color: '#334155',
+          // ← Sin porcentaje en la leyenda, solo el nombre
+          generateLabels: (chart) => {
+            return chart.data.labels.map((label, i) => ({
+              text: `${label}  (${chart.data.datasets[0].data[i]})`,
+              fillStyle: chart.data.datasets[0].backgroundColor[i],
+              strokeStyle: '#fff',
+              lineWidth: 1,
+              index: i
+            }))
+          }
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0)
+            const pct   = Math.round(ctx.parsed / total * 100)
+            return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`
+          }
+        }
+      },
+      datalabels: {
+  display: true, // ← siempre mostrar
+  color: '#ffffff',
+  font: (ctx) => {
+    // Fuente más pequeña para segmentos chicos
+    const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0)
+    const pct   = ctx.dataset.data[ctx.dataIndex] / total
+    return { weight: 'bold', size: pct < 0.06 ? 8 : 11 }
+  },
+  formatter: (value, ctx) => {
+    const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0)
+    const pct   = Math.round(value / total * 100)
+    return pct < 3 ? '' : `${pct}%` // ← si es muy chico, no muestra texto (evita overlap)
+  },
+  textShadowBlur: 4,
+  textShadowColor: 'rgba(0,0,0,0.4)',
+}
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-    },
-  })
-
+  },
+})
   const sevLabels = ["Sev 1", "Sev 2", "Sev 3", "Sev 4", "Sev 5"]
   const sevColors = ["#1d9e75", "#5dcaa5", "#ef9f27", "#e24b4a", "#a32d2d"]
+
   instSev = new window.Chart(chartSev.value, {
-    type: "bar",
-    data: {
-      labels: sevLabels,
-      datasets: [{
-        data: [s.porSeveridad[1], s.porSeveridad[2], s.porSeveridad[3], s.porSeveridad[4], s.porSeveridad[5]],
-        backgroundColor: sevColors,
-        borderRadius: 4,
-        borderWidth: 0,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#888" } },
-        y: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { color: "#888", precision: 0 } },
+  type: "bar",
+  data: {
+    labels: sevLabels,
+    datasets: [{
+      data: [s.porSeveridad[1], s.porSeveridad[2], s.porSeveridad[3], s.porSeveridad[4], s.porSeveridad[5]],
+      backgroundColor: sevColors,
+      borderRadius: 4,
+      borderWidth: 0,
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` ${ctx.parsed.y} incidencias`
+        }
       },
+      // ← valores encima de cada barra
+      datalabels: undefined
     },
-  })
+    // En instSev, dentro de options:
+    scales: {
+    x: { grid: { display: false }, ticks: { color: "#888" } },
+    y: {
+    grid: { color: "rgba(0,0,0,0.06)" },
+    ticks: { color: "#888", precision: 0 },
+    beginAtZero: true,
+    suggestedMax: Math.max(...[s.porSeveridad[1], s.porSeveridad[2], s.porSeveridad[3], s.porSeveridad[4], s.porSeveridad[5]]) * 1.2, // ← 20% extra arriba
+  },
+},
+    // Plugin inline para labels sobre barras
+    animation: {
+      onComplete: function() {
+        const chart = this
+        const ctx   = chart.ctx
+        ctx.font = 'bold 11px sans-serif'
+        ctx.fillStyle = '#334155'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'bottom'
+        chart.data.datasets.forEach((dataset, i) => {
+          chart.getDatasetMeta(i).data.forEach((bar, j) => {
+            const val = dataset.data[j]
+            if (val > 0) ctx.fillText(val, bar.x, bar.y - 2)
+          })
+        })
+      }
+    }
+  },
+})
 
   instZona = new window.Chart(chartZona.value, {
     type: "bar",
@@ -235,6 +318,216 @@ async function renderCharts() {
     },
   })
 }
+//nueva funcion
+async function exportarPDF() {
+  if (!stats.value || exportando.value) return
+  exportando.value = true
+
+  try {
+    // Cargar librerías si no están
+    if (!window.jspdf) {
+      await new Promise(resolve => {
+        const s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+        s.onload = resolve
+        document.head.appendChild(s)
+      })
+    }
+    if (!window.html2canvas) {
+      await new Promise(resolve => {
+        const s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
+        s.onload = resolve
+        document.head.appendChild(s)
+      })
+    }
+
+    const { jsPDF } = window.jspdf
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const s   = stats.value
+    const now = new Date()
+    const fecha = now.toLocaleDateString('es-MX', { 
+      day: '2-digit', month: 'long', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
+    })
+    const periodos = { 60: '1 hora', 180: '3 horas', 720: '12 horas', 1440: '24 horas' }
+    const periodo  = periodos[minutos.value] ?? minutos.value + ' min'
+
+    // ── Encabezado ──────────────────────────────────────────
+    pdf.setFillColor(8, 58, 136)
+    pdf.rect(0, 0, 210, 28, 'F')
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(16)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('Reporte de Incidencias — Veracruz', 14, 12)
+    pdf.setFontSize(9)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text(`Generado: ${fecha}  |  Período: últimas ${periodo}`, 14, 22)
+
+    // ── Métricas principales ─────────────────────────────────
+    pdf.setTextColor(15, 23, 42)
+    pdf.setFontSize(11)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('Resumen general', 14, 38)
+
+    const metricas = [
+      { label: 'Total incidencias',   valor: String(s.total) },
+      { label: 'Severidad promedio',  valor: `${s.sevPromGlobal} / 5` },
+      { label: 'Tipo más frecuente',  valor: s.tipoMasFrecuente },
+      { label: 'Zona más activa',     valor: s.zonaMasActiva },
+    ]
+
+    metricas.forEach((m, i) => {
+      const x = 14 + (i % 2) * 95
+      const y = 44 + Math.floor(i / 2) * 20
+
+      pdf.setFillColor(248, 250, 252)
+      pdf.roundedRect(x, y, 88, 16, 3, 3, 'F')
+      pdf.setFontSize(8)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setTextColor(100, 116, 139)
+      pdf.text(m.label, x + 4, y + 6)
+      pdf.setFontSize(11)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(2, 6, 23)
+      pdf.text(m.valor, x + 4, y + 13)
+    })
+
+    // ── Tabla de zonas ───────────────────────────────────────
+    let y = 90
+    pdf.setFontSize(11)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setTextColor(15, 23, 42)
+    pdf.text('Ranking de zonas', 14, y)
+    y += 6
+
+    // Cabecera tabla
+    pdf.setFillColor(8, 58, 136)
+    pdf.rect(14, y, 182, 8, 'F')
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(8)
+    pdf.setFont('helvetica', 'bold')
+    const cols = ['#', 'Zona', 'Total', 'Tipo dominante', 'Sev. prom.', 'Riesgo']
+    const colX = [16, 24, 80, 100, 152, 172]
+    cols.forEach((c, i) => pdf.text(c, colX[i], y + 5.5))
+    y += 8
+
+    // Filas
+    s.zonasRanking.forEach((z, idx) => {
+      const bg = idx % 2 === 0 ? [255,255,255] : [248,250,252]
+      pdf.setFillColor(...bg)
+      pdf.rect(14, y, 182, 8, 'F')
+      pdf.setTextColor(15, 23, 42)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(8)
+
+      pdf.text(String(idx + 1),           colX[0], y + 5.5)
+      pdf.text(z.nombre,                  colX[1], y + 5.5)
+      pdf.text(String(z.total),           colX[2], y + 5.5)
+      pdf.text(z.tipoDom,                 colX[3], y + 5.5)
+      pdf.text(z.sevProm.toFixed(1),      colX[4], y + 5.5)
+
+      // Badge riesgo con color
+      const riesgoCols = {
+        alto:  [226, 75,  74],
+        medio: [239,159,  39],
+        bajo:  [ 29,158, 117],
+      }
+      const rc = riesgoCols[z.riesgo] ?? [136,135,128]
+      pdf.setFillColor(...rc)
+      pdf.roundedRect(colX[5], y + 1, 20, 6, 2, 2, 'F')
+      pdf.setTextColor(255,255,255)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text(z.riesgo, colX[5] + 2, y + 5.5)
+
+      y += 8
+    })
+
+    // ── Capturar gráficas ────────────────────────────────────────
+// ── Capturar gráficas ────────────────────────────────────────
+    y += 10
+    pdf.setTextColor(15, 23, 42)
+    pdf.setFontSize(11)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('Gráficas', 14, y)
+    y += 6
+
+    pdf.setDrawColor(226, 232, 240)
+    pdf.setLineWidth(0.5)
+    pdf.line(14, y, 196, y)
+    y += 6
+
+    const canvases = [
+      { ref: chartTipo.value, titulo: 'Incidencias por tipo' },
+      { ref: chartSev.value,  titulo: 'Distribución de severidad' },
+      { ref: chartZona.value, titulo: 'Zonas con más incidencias', fullWidth: true },
+    ]
+
+    const graficasPares     = canvases.filter(c => !c.fullWidth)
+    const graficasFullWidth = canvases.filter(c => c.fullWidth)
+
+    if (y > 200) { pdf.addPage(); y = 14 }
+
+    const anchoMitad = 86
+    const altoMitad  = 55
+
+    for (let i = 0; i < graficasPares.length; i++) {
+      const { ref: canvas, titulo } = graficasPares[i]
+      if (!canvas) continue
+      const x = i === 0 ? 14 : 110
+      pdf.setFillColor(248, 250, 252)
+      pdf.roundedRect(x, y, anchoMitad, altoMitad + 10, 3, 3, 'F')
+      pdf.setDrawColor(226, 232, 240)
+      pdf.setLineWidth(0.3)
+      pdf.roundedRect(x, y, anchoMitad, altoMitad + 10, 3, 3, 'S')
+      pdf.setFontSize(8)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(100, 116, 139)
+      pdf.text(titulo, x + 4, y + 6)
+      const imgData = canvas.toDataURL('image/png')
+      pdf.addImage(imgData, 'PNG', x + 3, y + 8, anchoMitad - 6, altoMitad - 4)
+    }
+
+    y += altoMitad + 18
+
+    for (const { ref: canvas, titulo } of graficasFullWidth) {
+      if (!canvas) continue
+      if (y > 220) { pdf.addPage(); y = 14 }
+      const anchoFull = 182
+      const altoFull  = 65
+      pdf.setFillColor(248, 250, 252)
+      pdf.roundedRect(14, y, anchoFull, altoFull + 10, 3, 3, 'F')
+      pdf.setDrawColor(226, 232, 240)
+      pdf.setLineWidth(0.3)
+      pdf.roundedRect(14, y, anchoFull, altoFull + 10, 3, 3, 'S')
+      pdf.setFontSize(8)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(100, 116, 139)
+      pdf.text(titulo, 18, y + 6)
+      const imgData = canvas.toDataURL('image/png')
+      pdf.addImage(imgData, 'PNG', 17, y + 8, anchoFull - 6, altoFull - 4)
+      y += altoFull + 16
+    }
+
+    // ── Pie de página ────────────────────────────────────────
+    const totalPags = pdf.getNumberOfPages()
+    for (let p = 1; p <= totalPags; p++) {
+      pdf.setPage(p)
+      pdf.setFontSize(7)
+      pdf.setTextColor(148, 163, 184)
+      pdf.setFont('helvetica', 'normal')
+      pdf.text('Sistema de Monitoreo — Veracruz', 14, 290)
+      pdf.text(`Página ${p} de ${totalPags}`, 180, 290)
+    }
+
+    pdf.save(`reporte-incidencias-${now.toISOString().slice(0,10)}.pdf`)
+
+  } catch (err) {
+    console.error('Error generando PDF:', err)
+  } finally {
+    exportando.value = false
+  }
+}
 
 async function recargar() {
   await cargarStats(Number(minutos.value))
@@ -247,6 +540,15 @@ watch(() => props.visible, async (val) => {
       await new Promise((resolve) => {
         const script = document.createElement("script")
         script.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"
+        script.onload = resolve
+        document.head.appendChild(script)
+      })
+    }
+//porcentaje dentro de la grafica
+    if (!window.ChartDataLabels) {
+      await new Promise((resolve) => {
+        const script = document.createElement("script")
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"
         script.onload = resolve
         document.head.appendChild(script)
       })
@@ -570,6 +872,48 @@ watch(() => props.visible, async (val) => {
   0%   { opacity: 0.6; }
   50%  { opacity: 1; }
   100% { opacity: 0.6; }
+}
+
+/* ===== HEADER mejorado ===== */
+.dm-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ===== BOTÓN PDF ===== */
+.dm-btn-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: none;
+  background: #1e3a5f;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(30, 58, 95, 0.35);
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.dm-btn-pdf:hover {
+  background: #264d7a;
+  box-shadow: 0 4px 10px rgba(30, 58, 95, 0.45);
+  transform: translateY(-1px);
+}
+
+.dm-btn-pdf:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 </style>
