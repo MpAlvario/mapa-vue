@@ -44,7 +44,10 @@
         :api-url="API.terrestre.incidencias()" 
       />
 
-      <LeyendaIncidencias v-if="props.vistaActiva !== 'heatmap'" />
+      <LeyendaIncidencias
+          v-if="!['heatmap', 'poligonos', 'clusters'].includes(props.vistaActiva)"
+        />
+
     </div>
     
     <div class="bottom-bar-global"></div>
@@ -108,7 +111,8 @@ const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
   trazarRutaDesdePatrulla,
   () => refrescarTodo(),
   () => cargarHeatmap(minutos.value),
-  () => cargarIncidencias(tipo, minutos)
+  () => cargarIncidencias(tipo, minutos),
+  
 )
 
 // Vista markers — sin cambios
@@ -192,7 +196,6 @@ async function refrescarTodo() {
     totalMarkers = await cargarIncidencias(tipo.value, minutos.value)
   }
 
-  //  Mapear DESPUÉS de que cargarIncidencias terminó
   incidencias.value = incidenciasData.value.map(i => ({
     lat: parseFloat(i.latitud),
     lng: parseFloat(i.longitud),
@@ -201,9 +204,11 @@ async function refrescarTodo() {
     severidad: i.severidad
   }))
 
-  console.log('Incidencias mapeadas:', incidencias.value.length) // debe ser 20
-
+  // SOLO cargar patrullas al inicio
+if (!cargaInicialHecha) {
   await cargarPatrullasVisual()
+  cargaInicialHecha = true
+}
 
   info.value = `
     Incidentes: ${totalMarkers}<br>
@@ -215,6 +220,8 @@ onMounted(() => {
   const stop = watch(map, async (nuevoMapa) => {
     if (nuevoMapa) {
       stop()
+//carga las patrullas
+      await cargarPatrullasVisual()
 
       // Inicializar el cluster group una vez que el mapa existe  ← NUEVO
       inicializarCluster()
@@ -438,5 +445,18 @@ onBeforeUnmount(() => {
 #app {
   height: 100vh;
   position: relative;
+}
+
+.patrulla-sirena {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  animation: sirena 0.6s infinite;
+}
+
+@keyframes sirena {
+  0% { background: #3b82f6; }
+  50% { background: #ef4444; }
+  100% { background: #3b82f6; }
 }
 </style>
