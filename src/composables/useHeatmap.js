@@ -2,6 +2,9 @@ import { ref } from "vue"
 import L from "leaflet"
 import "leaflet.heat"
 import { API } from "@/config/api"
+import { usePolygonZones } from "@/composables/usePolygonZones"
+
+const { getZoneForCoords } = usePolygonZones()
 
 export function useMapHeatmap(map) {
   const heatLayer = ref(null)
@@ -31,11 +34,19 @@ export function useMapHeatmap(map) {
       if (!response.ok) return
 
       // Transformar objetos a arrays que leaflet.heat entiende
-      const puntos = response.data.map(item => [
-        item.lat,
-        item.lng,
-        item.severidad ? item.severidad / 5 : 0.1
-      ])
+      const puntos = response.data
+        .map(item => {
+          const lat = parseFloat(item.lat)
+          const lng = parseFloat(item.lng)
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || !getZoneForCoords(lat, lng)) return null
+
+          return [
+            lat,
+            lng,
+            item.severidad ? item.severidad / 5 : 0.1
+          ]
+        })
+        .filter(Boolean)
 
       if (heatLayer.value && map.value.hasLayer(heatLayer.value)) {
         map.value.removeLayer(heatLayer.value)

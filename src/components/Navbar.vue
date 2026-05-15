@@ -117,6 +117,17 @@
                  <span>Polígonos</span>
                  <span v-if="vistaActiva === 'poligonos'" class="check">✓</span>
               </button>
+
+              <button
+              class="dropdown-item"
+              :class="{ selected: vistaActiva === 'prediccion' }"
+              @click="seleccionarVista('prediccion')"
+                    >
+
+                <span class="item-icon">🔮</span>
+                <span>Predicción</span>
+                <span v-if="vistaActiva === 'prediccion'" class="check">✓</span>
+                </button>
               
             </div>
           </transition>

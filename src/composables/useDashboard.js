@@ -1,5 +1,8 @@
 import { ref } from "vue"
 import { API } from "@/config/api"
+import { usePolygonZones } from "@/composables/usePolygonZones"
+
+const { getZoneForCoords } = usePolygonZones()
 
 export function useDashboard(apiUrl = API.terrestre.incidencias()) {
   const cargando = ref(false)
@@ -29,14 +32,30 @@ export function useDashboard(apiUrl = API.terrestre.incidencias()) {
     return "bajo"
   }
 
-  async function cargarStats(minutos = 1440) {
+  async function cargarStats(minutos = 1440, tipo = "todos") {
     cargando.value = true
-    console.log('Dashboard fetching:', `${apiUrl}?minutos=${minutos}`)
+    const url = `${apiUrl}?tipo=${encodeURIComponent(tipo)}&minutos=${minutos}&limit=400&ts=${Date.now()}`
+    console.log('Dashboard fetching:', url)
 
     try {
-      const res  = await fetch(`${apiUrl}?minutos=${minutos}`)
+      const res  = await fetch(url)
       const json = await res.json()
-      const data = json.data ?? []
+      const data = (json.data ?? [])
+        .map(inc => {
+          const lat = parseFloat(inc.latitud)
+          const lng = parseFloat(inc.longitud)
+          const zona = getZoneForCoords(lat, lng)
+
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || !zona) return null
+
+          return {
+            ...inc,
+            latitud: lat,
+            longitud: lng,
+            zona
+          }
+        })
+        .filter(Boolean)
 
       console.log('Dashboard total:', data.length)
       console.log('Dashboard primeros 3:', data.slice(0,3))

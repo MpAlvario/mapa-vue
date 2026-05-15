@@ -1,5 +1,7 @@
 // src/composables/usePolygonZones.js
 import { ref } from 'vue'
+import * as turf from '@turf/turf'
+import veracruz from '@/assets/veracruz-zonas.js'
 
 // ── Límites reales del estado de Veracruz ──────────────────────────────────
 const BOUNDS = {
@@ -14,6 +16,70 @@ const BOUNDS = {
 //    LNG_DIV ~ 97.10 → sigue aproximadamente la Sierra Madre Oriental
 const LAT_DIV = 19.15
 const LNG_DIV = -96.14
+let visualZonesCache = null
+let visualZoneCollectionsCache = null
+
+function estaEnVeracruzCiudad(feature) {
+  const [minLng, minLat, maxLng, maxLat] = feature.bbox || turf.bbox(feature)
+
+  return (
+    minLat >= 19.0 &&
+    maxLat <= 19.3 &&
+    minLng >= -96.3 &&
+    maxLng <= -96.0
+  )
+}
+
+function getZonaIdFromFeature(feature) {
+  const [lng, lat] = turf.center(feature).geometry.coordinates
+  const esNorte   = lat >= LAT_DIV
+  const esOriente = lng >= LNG_DIV
+
+  if (esNorte && esOriente) return 'norte-oriente'
+  if (esNorte && !esOriente) return 'norte-poniente'
+  if (!esNorte && esOriente) return 'sur-oriente'
+  return 'sur-poniente'
+}
+
+function getVisualZones() {
+  if (visualZonesCache) return visualZonesCache
+
+  visualZonesCache = veracruz.features
+    .filter(estaEnVeracruzCiudad)
+    .map(feature => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        zona: getZonaIdFromFeature(feature)
+      }
+    }))
+
+  return visualZonesCache
+}
+
+function getVisualZoneCollections() {
+  if (visualZoneCollectionsCache) return visualZoneCollectionsCache
+
+  const zonas = {
+    'norte-oriente':  [],
+    'norte-poniente': [],
+    'sur-oriente':    [],
+    'sur-poniente':   []
+  }
+
+  getVisualZones().forEach(feature => {
+    const id = feature.properties.zona
+    if (zonas[id]) zonas[id].push(feature)
+  })
+
+  visualZoneCollectionsCache = Object.entries(zonas).map(([id, features]) => ({
+    type:       'FeatureCollection',
+    properties: { zona: id },
+    features
+  }))
+
+  return visualZoneCollectionsCache
+}
 
 export function usePolygonZones() {
 
@@ -67,14 +133,15 @@ export function usePolygonZones() {
    * @returns {string} id de la zona
    */
   function getZoneForCoords(lat, lng) {
-  const esNorte   = lat >= 19.15
-  const esOriente = lng >= -96.14
+    const latNum = Number(lat)
+    const lngNum = Number(lng)
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return null
 
-  if (esNorte && esOriente) return 'norte-oriente'
-  if (esNorte && !esOriente) return 'norte-poniente'
-  if (!esNorte && esOriente) return 'sur-oriente'
-  return 'sur-poniente'
-}
+    const punto = turf.point([lngNum, latNum])
+    const zona = getVisualZones().find(feature => turf.booleanPointInPolygon(punto, feature))
+
+    return zona?.properties?.zona ?? null
+  }
 
   /**
    * Convierte bounds a array de LatLng para Leaflet
@@ -102,6 +169,7 @@ export function usePolygonZones() {
   return {
     zones,
     getZoneForCoords,
+    getVisualZoneCollections,
     boundsToLeafletPolygon,
     getZoneById,
     LAT_DIV,

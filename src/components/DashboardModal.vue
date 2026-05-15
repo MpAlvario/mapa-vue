@@ -131,6 +131,7 @@ import { useDashboard } from "../composables/useDashboard"
 const props = defineProps({
   visible:  { type: Boolean, default: false },
   apiUrl:   { type: String,  default: API.terrestre.incidencias() }, //api link
+  tipo:     { type: String,  default: "todos" },
 })
 
 
@@ -530,7 +531,7 @@ async function exportarPDF() {
 }
 
 async function recargar() {
-  await cargarStats(Number(minutos.value))
+  await cargarStats(Number(minutos.value), props.tipo)
   renderCharts()
 }
 

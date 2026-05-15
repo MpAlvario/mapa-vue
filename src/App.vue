@@ -87,12 +87,4 @@ export default {
   box-sizing: border-box;
 }
 
-/* Marcadores Leaflet - render optimizado */
-.leaflet-marker-icon,
-.leaflet-marker-shadow {
-  transition: none !important;
-  transform: translateZ(0);
-  will-change: transform;
-  image-rendering: auto;
-}
 </style>

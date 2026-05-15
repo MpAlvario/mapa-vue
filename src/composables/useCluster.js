@@ -90,6 +90,7 @@ export function useCluster(map, trazarRuta, asignarPatrullaAPI, miUbicacion, miM
   // en useIncidencias.js — aquí no se duplica ni una línea.
   const {
     cargarIncidencias,
+    quitarMarkerIncidencia,
     colorPorSeveridad,
   } = useIncidencias(map, clusterLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
 
@@ -125,6 +126,7 @@ export function useCluster(map, trazarRuta, asignarPatrullaAPI, miUbicacion, miM
     clusterLayer,             // ref al MarkerClusterGroup (reemplaza markersLayer)
     inicializarCluster,
     cargarIncidenciasCluster,
+    quitarMarkerIncidencia,
     mostrarCluster,
     ocultarCluster,
     destruirCluster,

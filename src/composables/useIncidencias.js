@@ -1,8 +1,10 @@
 import L from "leaflet"
 import { ref } from "vue"
 import { API } from "@/config/api"
+import { usePolygonZones } from "@/composables/usePolygonZones"
 
 const incidenciasData = ref([])
+const { getZoneForCoords } = usePolygonZones()
 
 // ── Colores por tipo de incidencia ─────────────────────────────
 const COLORES_INCIDENCIA = {
@@ -64,10 +66,30 @@ const patrullaIcon = L.icon({
   popupAnchor: [0, -45]
 })
 
-export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker) {
+export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker, bloquearRefresh) {
 
   // ── Animación "Ir a incidencia" ────────────────────────────────
   const animacionActiva = ref(false)
+
+  function quitarMarkerIncidencia(incidenciaId) {
+    if (!markersLayer.value) return false
+
+    let markerRemovido = false
+
+    markersLayer.value.eachLayer(layer => {
+      if (String(layer?.options?.incidenciaId) === String(incidenciaId)) {
+        if (layer.closePopup) layer.closePopup()
+        markersLayer.value.removeLayer(layer)
+        markerRemovido = true
+      }
+    })
+
+    incidenciasData.value = incidenciasData.value.filter(
+      inc => String(inc.id) !== String(incidenciaId)
+    )
+
+    return markerRemovido
+  }
 
   async function irAIncidencia(latIncidencia, lngIncidencia, incidenciaId) {
     if (animacionActiva.value) return
@@ -117,11 +139,12 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
     await moverMarcador(marker, coordenadas)
 
     // Resolver incidencia
-    await fetch(API.terrestre.resolverIncidencia(), { //Link Url
+    const resResolver = await fetch(API.terrestre.resolverIncidencia(), { //Link Url
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: incidenciaId })
     })
+    if (resResolver.ok) quitarMarkerIncidencia(incidenciaId)
 
     // FASE 2 -> verde sólido (atendiendo)
     rutaLayer.setStyle({ color: "#10b981", dashArray: null, opacity: 1 })
@@ -214,27 +237,46 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
       if (!res.ok) throw new Error("Servidor no responde")
 
       const json = await res.json()
-      console.log("RESPUESTA API:", json)
-console.log("TOTAL DATA:", json?.data?.length)
-console.log("INCIDENCIAS CON ZONA:", json.data.slice(0,5))
-
-      if (json.ok && json.data) {
-      incidenciasData.value = json.data
-}
-
-      if (markersLayer.value) {
-      markersLayer.value.clearLayers()
-}
+    //  console.log("RESPUESTA API:", json)
+     // console.log("TOTAL DATA:", json?.data?.length)
+     // console.log("INCIDENCIAS CON ZONA:", json.data.slice(0,5))
 
       if (!json.ok || !json.data) return 0
 
-      json.data.forEach(inc => {
+      const incidenciasEnPoligonos = json.data
+        .map(inc => {
+          const lat = parseFloat(inc.latitud)
+          const lon = parseFloat(inc.longitud)
+          const zona = getZoneForCoords(lat, lon)
+
+          if (!Number.isFinite(lat) || !Number.isFinite(lon) || !zona) return null
+
+          return {
+            ...inc,
+            latitud: lat,
+            longitud: lon,
+            zona
+          }
+        })
+        .filter(Boolean)
+
+      incidenciasData.value = incidenciasEnPoligonos
+
+     if (markersLayer.value) {
+     if (bloquearRefresh?.value) return incidenciasData.value.length  // ← no tocar markers
+     markersLayer.value.clearLayers()
+}
+
+      incidenciasEnPoligonos.forEach(inc => {
         const lat = parseFloat(inc.latitud)
         const lon = parseFloat(inc.longitud)
         const sev = parseInt(inc.severidad)
 
         // ── Marker con ícono circular por tipo ──────────────────
-        const marker = L.marker([lat, lon], { icon: iconoPorTipo(inc.tipo) })
+        const marker = L.marker([lat, lon], {
+          icon: iconoPorTipo(inc.tipo),
+          incidenciaId: String(inc.id)
+        })
           .bindPopup(`
             <div style="font-family: sans-serif; padding: 4px 0;">
               <b style="font-size:13px; color:#1a1a2e;">🚨 ${inc.tipo.toUpperCase()}</b>
@@ -303,7 +345,7 @@ console.log("INCIDENCIAS CON ZONA:", json.data.slice(0,5))
         markersLayer.value.addLayer(marker)
       })
 
-      return json.count
+      return incidenciasEnPoligonos.length
 
     } catch (error) {
       console.error(error)
@@ -313,6 +355,7 @@ console.log("INCIDENCIAS CON ZONA:", json.data.slice(0,5))
 
   return {
     cargarIncidencias,
+    quitarMarkerIncidencia,
     colorPorSeveridad,
     incidenciasData
   }

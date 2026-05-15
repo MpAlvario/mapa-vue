@@ -42,6 +42,7 @@
       <DashboardModal 
         v-model:visible="dashVisibleLocal" 
         :api-url="API.terrestre.incidencias()" 
+        :tipo="tipo"
       />
 
       <LeyendaIncidencias
@@ -67,6 +68,8 @@ import { useCluster }      from "../composables/useCluster"          // ← NUEV
 import LeyendaIncidencias  from "../components/LeyendaIncidencias.vue"
 import DashboardModal from "./DashboardModal.vue"
 import MapPolygonZones from "../components/MapPolygonZones.vue" //nuevo
+import L from "leaflet"
+import "leaflet.heat"
 
 const incidencias = ref([])
 
@@ -97,6 +100,8 @@ const tipo    = ref("todos")
 const minutos = ref("1440")
 const info    = ref("Cargando...")
 const hayRuta = ref(false)
+const prediccionLayer = ref(null)
+
 
 let cargaInicialHecha = false
 let autoRefresh = null
@@ -105,18 +110,31 @@ const { map, markersLayer, patrullasLayer, miUbicacion, miMarker, invalidateSize
 
 const { routingControl, trazarRuta, trazarRutaDesdePatrulla, quitarRuta } = useRouting(map, miUbicacion, miMarker, hayRuta)
 
-const { asignarPatrullaAPI, cargarPatrullasVisual } = useMapPatrullas(
+let quitarMarkerIncidenciaMarkers = () => false
+let quitarMarkerIncidenciaCluster = () => false
+
+const { asignarPatrullaAPI, cargarPatrullasVisual,bloquearRefresh } = useMapPatrullas(
   map,
   patrullasLayer,
   trazarRutaDesdePatrulla,
   () => refrescarTodo(),
   () => cargarHeatmap(minutos.value),
-  () => cargarIncidencias(tipo, minutos),
-  
+  () => cargarIncidencias(tipo.value, minutos.value),
+  (incidenciaId) => {
+    quitarMarkerIncidenciaMarkers(incidenciaId)
+    quitarMarkerIncidenciaCluster(incidenciaId)
+  }
 )
 
 // Vista markers — sin cambios
-const { cargarIncidencias, colorPorSeveridad, incidenciasData } = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
+const {
+  cargarIncidencias,
+  quitarMarkerIncidencia,
+  colorPorSeveridad,
+  incidenciasData
+} = useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker, bloquearRefresh)
+
+quitarMarkerIncidenciaMarkers = quitarMarkerIncidencia
 
 // Vista heatmap — sin cambios
 const { heatLayer, cargarHeatmap } = useMapHeatmap(map)
@@ -126,35 +144,55 @@ const {
   clusterLayer,
   inicializarCluster,
   cargarIncidenciasCluster,
+  quitarMarkerIncidencia: quitarMarkerIncidenciaDelCluster,
   mostrarCluster,
   ocultarCluster,
   destruirCluster,
 } = useCluster(map, trazarRuta, asignarPatrullaAPI, miUbicacion, miMarker)
+
+quitarMarkerIncidenciaCluster = quitarMarkerIncidenciaDelCluster
 // ────────────────────────────────────────────────────────────────
 
 // ── Helper: oculta las 3 capas y muestra solo la activa ─────────
 function aplicarVista(vista) {
   if (!map.value) return
 
-  // Ocultar todo
-  if (markersLayer.value  && map.value.hasLayer(markersLayer.value))  map.value.removeLayer(markersLayer.value)
-  if (heatLayer.value     && map.value.hasLayer(heatLayer.value))     map.value.removeLayer(heatLayer.value)
-  ocultarCluster()
-
-  if (vista === 'poligonos') {
-    // No hacemos nada aquí porque el componente MapPolygonZones
-    // se encarga solo con :visible
-    return
+  //  limpiar TODAS las capas
+  if (markersLayer.value && map.value.hasLayer(markersLayer.value)) {
+    map.value.removeLayer(markersLayer.value)
   }
 
-  // Mostrar solo la vista activa
+  if (heatLayer.value && map.value.hasLayer(heatLayer.value)) {
+    map.value.removeLayer(heatLayer.value)
+  }
+
+  if (prediccionLayer.value && map.value.hasLayer(prediccionLayer.value)) {
+    map.value.removeLayer(prediccionLayer.value)
+  }
+
+  ocultarCluster()
+
+  if (vista === 'poligonos') return
+
+  //  mostrar según vista
   if (vista === 'heatmap') {
     if (heatLayer.value) map.value.addLayer(heatLayer.value)
+
+  } else if (vista === 'prediccion') {
+    cargarPrediccion()
+
   } else if (vista === 'cluster') {
     mostrarCluster()
+
   } else {
-    // 'markers' (default)
     if (markersLayer.value) map.value.addLayer(markersLayer.value)
+  }
+
+  //  efecto visual 
+  if (vista === 'prediccion') {
+    map.value.getContainer().style.filter = "hue-rotate(40deg) brightness(1.1)"
+  } else {
+    map.value.getContainer().style.filter = "none"
   }
 }
 
@@ -204,17 +242,63 @@ async function refrescarTodo() {
     severidad: i.severidad
   }))
 
-  // SOLO cargar patrullas al inicio
+ // cargar patrullas solo una vez
 if (!cargaInicialHecha) {
   await cargarPatrullasVisual()
   cargaInicialHecha = true
 }
 
+// ejecutar predicción si está activa
+if (props.vistaActiva === 'prediccion') {
+  await cargarPrediccion()
+}
   info.value = `
     Incidentes: ${totalMarkers}<br>
     Auto refresh: 10s
   `
 }
+
+//Funcion de predicción
+
+async function cargarPrediccion() {
+  if (!map.value) return
+
+  try {
+    const res = await fetch("http://127.0.0.1:5000/prediccion")
+    const data = await res.json()
+
+    const maxScore = Math.max(...data.map(z => z.score))
+
+    const puntos = data.map(z => [
+    parseFloat(z.lat_bin),
+    parseFloat(z.lon_bin),
+    z.score / maxScore
+])
+    // eliminar capa anterior si existe
+    if (prediccionLayer.value && map.value.hasLayer(prediccionLayer.value)) {
+      map.value.removeLayer(prediccionLayer.value)
+    }
+
+    prediccionLayer.value = L.heatLayer(puntos, {
+    radius: 35,
+    blur: 25,
+    maxZoom: 17,
+    minOpacity: 0.4,
+    gradient: {
+    0.1: 'blue',
+    0.4: 'lime',
+    0.7: 'orange',
+    1.0: 'red'
+  }
+})
+
+    map.value.addLayer(prediccionLayer.value)
+
+  } catch (error) {
+    console.error("Error en predicción:", error)
+  }
+}
+//finaliza
 
 onMounted(() => {
   const stop = watch(map, async (nuevoMapa) => {
@@ -231,19 +315,7 @@ onMounted(() => {
 
       // Cerrar popups antes del zoom
       nuevoMapa.on("zoomstart", () => {
-        nuevoMapa.closePopup()
-
-        if (markersLayer.value) {
-          markersLayer.value.eachLayer(layer => {
-            if (layer.closePopup) layer.closePopup()
-          })
-        }
-
-        if (patrullasLayer.value) {
-          patrullasLayer.value.eachLayer(layer => {
-            if (layer.closePopup) layer.closePopup()
-          })
-        }
+        
       })
 
       if (props.activo) {

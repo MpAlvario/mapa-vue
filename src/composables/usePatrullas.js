@@ -47,7 +47,8 @@ export function useMapPatrullas(
   trazarRutaDesdePatrulla,
   onRefrescar,
   onActualizarHeatmap,
-  onRefrescarIncidencias
+  onRefrescarIncidencias,
+  onIncidenciaResuelta
 ) {
   const animacionesActivas = new Set()
   const bloquearRefresh    = ref(false)
@@ -56,19 +57,42 @@ export function useMapPatrullas(
   // ── asignar (entrada principal) ──────────────────────────────────────────
   async function asignarPatrullaAPI(latIncidencia, lngIncidencia, incidenciaId) {
     try {
+      const zonaIncidencia = getZoneForCoords(latIncidencia, lngIncidencia)
+      if (!zonaIncidencia) {
+        alert("La incidencia no esta dentro de un poligono asignado")
+        return
+      }
+
+      const patrulla = await buscarPatrullaDisponibleMasCercana(
+        latIncidencia,
+        lngIncidencia,
+        zonaIncidencia
+      )
+
+      if (!patrulla) {
+        alert("No hay patrullas disponibles dentro del poligono de esta incidencia")
+        return
+      }
+
       const res = await fetch(API.terrestre.despacho(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: latIncidencia, lng: lngIncidencia, incidencia_id: incidenciaId })
+        body: JSON.stringify({
+          lat: latIncidencia,
+          lng: lngIncidencia,
+          incidencia_id: incidenciaId,
+          patrulla_id: patrulla.id,
+          zona: zonaIncidencia
+        })
       })
       const data = await res.json()
       if (!data.success) { alert("No hay patrullas disponibles"); return }
 
-      const resPat  = await fetch(`${API.terrestre.patrullas()}?ts=${Date.now()}`)
-      const jsonPat = await resPat.json()
-      const lista   = Array.isArray(jsonPat) ? jsonPat : jsonPat.data
-      const patrulla = lista.find(p => String(p.id) === String(data.patrulla_id))
-      if (!patrulla) return
+      if (data.patrulla_id && String(data.patrulla_id) !== String(patrulla.id)) {
+        console.warn(
+          `El backend devolvio patrulla ${data.patrulla_id}, pero se usara la patrulla ${patrulla.id} por cercania y zona.`
+        )
+      }
 
       limpiarMarkerPatrulla(patrulla.id)
       const marker = crearMarkerActivo(patrulla)
@@ -86,20 +110,28 @@ export function useMapPatrullas(
 
   // ── ciclo completo ────────────────────────────────────────────────────────
   async function cicloPatrulla(patrulla, marker, latDestino, lngDestino, incidenciaId) {
+    // Bloquear refresh durante TODO el ciclo de la patrulla  
+    bloquearRefresh.value = true 
     // 1) ir a la incidencia asignada
     actualizarPopup(marker, popupEnCamino(patrulla.id, `#${incidenciaId}`))
     marker.setIcon(crearIconoPatrulla("En camino", true))
-    await moverPatrullaARuta(marker, latDestino, lngDestino, "#3b82f6")
+    const llegoAIncidencia = await moverPatrullaARuta(marker, latDestino, lngDestino, "#3b82f6")
+    if (!llegoAIncidencia) {
+      await finalizarPatrulla(patrulla, marker)
+      return
+    }
 
     marker.setIcon(crearIconoPatrulla("Atendiendo", false))
     actualizarPopup(marker, popupResuelta(patrulla.id))
-    await fetch(API.terrestre.resolverIncidencia(), {
+    const resResolver = await fetch(API.terrestre.resolverIncidencia(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: incidenciaId })
     })
+    if (resResolver.ok) onIncidenciaResuelta?.(incidenciaId)
+    await esperar(600)
     onRefrescarIncidencias?.()
-    await esperar(2500)
+    await esperar(1900)
 
     // 2) buscar siguiente en su zona
     const siguiente = await buscarIncidenciaDeSuPoligono(patrulla, marker, incidenciaId)
@@ -108,22 +140,29 @@ export function useMapPatrullas(
       actualizarPopup(marker, popupFinalizadoYendo(patrulla.id))
       marker.setIcon(crearIconoPatrulla("En camino", true))
 
-      await moverPatrullaARuta(
+      const llegoASiguiente = await moverPatrullaARuta(
         marker,
         parseFloat(siguiente.latitud),
         parseFloat(siguiente.longitud),
         "#f59e0b"
       )
 
+      if (!llegoASiguiente) {
+        await finalizarPatrulla(patrulla, marker)
+        return
+      }
+
       marker.setIcon(crearIconoPatrulla("Atendiendo", false))
       actualizarPopup(marker, popupResuelta(patrulla.id))
-      await fetch(API.terrestre.resolverIncidencia(), {
+      const resResolverSiguiente = await fetch(API.terrestre.resolverIncidencia(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: siguiente.id })
       })
+      if (resResolverSiguiente.ok) onIncidenciaResuelta?.(siguiente.id)
+      await esperar(600)
       onRefrescarIncidencias?.()
-      await esperar(2500)
+      await esperar(1900)
     }
 
     // 3) quedar disponible donde está
@@ -142,6 +181,7 @@ export function useMapPatrullas(
 
       // Zona de la patrulla según su posición actual
       const zonaPatrulla = getZoneForCoords(pos.lat, pos.lng)
+      if (!zonaPatrulla) return null
 
       const candidatas = lista
         .filter(inc => {
@@ -154,9 +194,13 @@ export function useMapPatrullas(
             parseFloat(inc.latitud),
             parseFloat(inc.longitud)
           )
-          return zonaInc === zonaPatrulla
+          return zonaInc && zonaInc === zonaPatrulla
         })
         .sort((a, b) => {
+          const sevA = parseInt(a.severidad) || 0
+          const sevB = parseInt(b.severidad) || 0
+          if (sevA !== sevB) return sevB - sevA
+
           const dA = distanciaKm(pos.lat, pos.lng, parseFloat(a.latitud), parseFloat(a.longitud))
           const dB = distanciaKm(pos.lat, pos.lng, parseFloat(b.latitud), parseFloat(b.longitud))
           return dA - dB
@@ -213,15 +257,49 @@ export function useMapPatrullas(
     })
   }
 
+  async function buscarPatrullaDisponibleMasCercana(latIncidencia, lngIncidencia, zonaIncidencia) {
+    const resPat  = await fetch(`${API.terrestre.patrullas()}?ts=${Date.now()}`)
+    const jsonPat = await resPat.json()
+    const lista   = Array.isArray(jsonPat) ? jsonPat : jsonPat.data
+    if (!lista?.length) return null
+
+    return lista
+      .filter(p => {
+        const lat = parseFloat(p.lat)
+        const lng = parseFloat(p.lng)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
+        if (!estaDisponible(p)) return false
+        return getZoneForCoords(lat, lng) === zonaIncidencia
+      })
+      .sort((a, b) => {
+        const dA = distanciaKm(latIncidencia, lngIncidencia, parseFloat(a.lat), parseFloat(a.lng))
+        const dB = distanciaKm(latIncidencia, lngIncidencia, parseFloat(b.lat), parseFloat(b.lng))
+        return dA - dB
+      })[0] ?? null
+  }
+
+  function estaDisponible(patrulla) {
+    const estado = String(patrulla.estado ?? "disponible").toLowerCase().trim()
+    return estado === "disponible"
+  }
+
   async function moverPatrullaARuta(marker, latDestino, lngDestino, colorRuta) {
     const origen = marker.getLatLng()
+    const zonaOrigen = getZoneForCoords(origen.lat, origen.lng)
+    const zonaDestino = getZoneForCoords(latDestino, lngDestino)
+
+    if (!zonaOrigen || !zonaDestino || zonaOrigen !== zonaDestino) {
+      alert("La patrulla no puede salir de su poligono asignado")
+      return false
+    }
+
     const resRuta = await fetch(API.terrestre.ruta(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lat1: origen.lat, lng1: origen.lng, lat2: latDestino, lng2: lngDestino })
     })
     const data = await resRuta.json()
-    if (!data.routes?.length) return
+    if (!data.routes?.length) return false
 
     const coords = data.routes[0].geometry.coordinates
     const ruta = L.polyline(coords.map(c => [c[1], c[0]]), {
@@ -230,6 +308,7 @@ export function useMapPatrullas(
 
     await moverMarcador(marker, coords)
     if (map.value.hasLayer(ruta)) map.value.removeLayer(ruta)
+    return true
   }
 
   async function cargarPatrullasVisual() {
