@@ -19,6 +19,11 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+function incidenciaEstaPendiente(incidencia) {
+  const estado = String(incidencia.estado ?? "pendiente").toLowerCase().trim()
+  return ["pendiente", "activo", "activa", "abierto", "abierta"].includes(estado)
+}
+
 // ─── iconos ───────────────────────────────────────────────────────────────────
 function crearIconoPatrulla(estado = "Disponible", sirena = false) {
   let clase = "patrulla-disponible"
@@ -40,6 +45,12 @@ const popupFinalizadoYendo = id        => `<b>🚓 Patrulla ${id}</b><br>✅ Fin
 const popupResuelta      = id          => `<b>🚓 Patrulla ${id}</b><br>✅ Incidencia resuelta`
 const popupDisponible    = id          => `<b>🚓 Patrulla ${id}</b><br>🟢 Disponible`
 
+const tooltipEnCamino       = (id, dest) => `Patrulla ${id}: en camino a ${dest}`
+const tooltipAtendiendo     = id         => `Patrulla ${id}: atendiendo incidencia`
+const tooltipBuscando       = id         => `Patrulla ${id}: buscando siguiente incidencia`
+const tooltipSiguiente      = (id, dest) => `Patrulla ${id}: yendo a ${dest}`
+const tooltipDisponible     = id         => `Patrulla ${id}: disponible`
+
 // ─── composable ───────────────────────────────────────────────────────────────
 export function useMapPatrullas(
   map,
@@ -55,12 +66,27 @@ export function useMapPatrullas(
   const posicionesFinales  = new Map()
 
   // ── asignar (entrada principal) ──────────────────────────────────────────
-  async function asignarPatrullaAPI(latIncidencia, lngIncidencia, incidenciaId) {
+  async function asignarPatrullaAPI(latIncidencia, lngIncidencia, incidenciaId, opciones = {}) {
     try {
       const zonaIncidencia = getZoneForCoords(latIncidencia, lngIncidencia)
       if (!zonaIncidencia) {
         alert("La incidencia no esta dentro de un poligono asignado")
         return
+      }
+
+      const origenManual = opciones.origen
+        ? {
+            lat: parseFloat(opciones.origen.lat),
+            lng: parseFloat(opciones.origen.lng)
+          }
+        : null
+
+      if (origenManual) {
+        const zonaOrigen = getZoneForCoords(origenManual.lat, origenManual.lng)
+        if (!zonaOrigen || zonaOrigen !== zonaIncidencia) {
+          alert("Tu ubicacion debe estar dentro del mismo poligono de la incidencia")
+          return
+        }
       }
 
       const patrulla = await buscarPatrullaDisponibleMasCercana(
@@ -95,7 +121,11 @@ export function useMapPatrullas(
       }
 
       limpiarMarkerPatrulla(patrulla.id)
-      const marker = crearMarkerActivo(patrulla)
+      const patrullaAnimada = origenManual
+        ? { ...patrulla, lat: origenManual.lat, lng: origenManual.lng }
+        : patrulla
+
+      const marker = crearMarkerActivo(patrullaAnimada)
       animacionesActivas.add(String(patrulla.id))
 
       await cicloPatrulla(
@@ -114,6 +144,7 @@ export function useMapPatrullas(
     bloquearRefresh.value = true 
     // 1) ir a la incidencia asignada
     actualizarPopup(marker, popupEnCamino(patrulla.id, `#${incidenciaId}`))
+    actualizarTooltip(marker, tooltipEnCamino(patrulla.id, "incidencia"))
     marker.setIcon(crearIconoPatrulla("En camino", true))
     const llegoAIncidencia = await moverPatrullaARuta(marker, latDestino, lngDestino, "#3b82f6")
     if (!llegoAIncidencia) {
@@ -123,6 +154,7 @@ export function useMapPatrullas(
 
     marker.setIcon(crearIconoPatrulla("Atendiendo", false))
     actualizarPopup(marker, popupResuelta(patrulla.id))
+    actualizarTooltip(marker, tooltipAtendiendo(patrulla.id))
     const resResolver = await fetch(API.terrestre.resolverIncidencia(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -134,10 +166,12 @@ export function useMapPatrullas(
     await esperar(1900)
 
     // 2) buscar siguiente en su zona
+    actualizarTooltip(marker, tooltipBuscando(patrulla.id))
     const siguiente = await buscarIncidenciaDeSuPoligono(patrulla, marker, incidenciaId)
 
     if (siguiente) {
       actualizarPopup(marker, popupFinalizadoYendo(patrulla.id))
+      actualizarTooltip(marker, tooltipSiguiente(patrulla.id, "incidencia"))
       marker.setIcon(crearIconoPatrulla("En camino", true))
 
       const llegoASiguiente = await moverPatrullaARuta(
@@ -154,6 +188,7 @@ export function useMapPatrullas(
 
       marker.setIcon(crearIconoPatrulla("Atendiendo", false))
       actualizarPopup(marker, popupResuelta(patrulla.id))
+      actualizarTooltip(marker, tooltipAtendiendo(patrulla.id))
       const resResolverSiguiente = await fetch(API.terrestre.resolverIncidencia(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -187,8 +222,8 @@ export function useMapPatrullas(
         .filter(inc => {
           // Excluir la que acabamos de resolver
           if (String(inc.id) === String(incidenciaAnteriorId)) return false
-          // Solo incidencias pendientes (ajusta el campo según tu modelo)
-          if (inc.estado && inc.estado !== "pendiente") return false
+          // Solo incidencias pendientes, normalizando el valor que llega del API.
+          if (!incidenciaEstaPendiente(inc)) return false
           // Verificar que pertenezca a la misma zona
           const zonaInc = getZoneForCoords(
             parseFloat(inc.latitud),
@@ -230,6 +265,7 @@ export function useMapPatrullas(
 
     marker.setIcon(crearIconoPatrulla("Disponible", false))
     actualizarPopup(marker, popupDisponible(patrulla.id))
+    actualizarTooltip(marker, tooltipDisponible(patrulla.id))
     animacionesActivas.delete(String(patrulla.id))
 
     setTimeout(() => { bloquearRefresh.value = false }, 4000)
@@ -248,6 +284,27 @@ export function useMapPatrullas(
     if (marker.getPopup()) marker.getPopup().setContent(html)
     else marker.bindPopup(html)
     if (marker.isPopupOpen()) marker.openPopup()
+  }
+
+  function actualizarTooltip(marker, texto, duracion = 3500) {
+    if (marker._tooltipTimeout) clearTimeout(marker._tooltipTimeout)
+
+    if (marker.getTooltip()) marker.setTooltipContent(texto)
+    else {
+      marker.bindTooltip(texto, {
+        permanent: false,
+        direction: "top",
+        offset: [0, -18],
+        className: "tooltip-patrulla",
+        opacity: 0.9
+      })
+    }
+
+    marker.openTooltip()
+    marker._tooltipTimeout = setTimeout(() => {
+      if (marker.closeTooltip) marker.closeTooltip()
+      marker._tooltipTimeout = null
+    }, duracion)
   }
 
   function limpiarMarkerPatrulla(idBuscado) {

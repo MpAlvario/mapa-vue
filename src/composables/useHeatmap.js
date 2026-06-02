@@ -54,16 +54,16 @@ export function useMapHeatmap(map) {
       }
 
       heatLayer.value = L.heatLayer(puntos, {
-        radius: map.value.getZoom() < 14 ? 90 : 50,
-        blur: 50,
+        radius: map.value.getZoom() < 14 ? 45 : 28,
+        blur: 28,
         maxZoom: 18,
-        minOpacity: 0.6,
-        max: 1,
+        minOpacity: 0.25,
+        max: 3,
         gradient: {
-          0.1: "blue",
-          0.3: "lime",
-          0.5: "yellow",
-          0.7: "orange",
+          0.15: "blue",
+          0.35: "lime",
+          0.6: "yellow",
+          0.85: "orange",
           1.0: "red"
         }
       }).addTo(map.value)

@@ -1,6 +1,6 @@
 // const BASE_URL = "http://192.168.71.200:8080"
 const BASE_URL = "http://localhost:8080"
-const URL_BARCO = "http://192.168.71.200:8080"
+const URL_BARCO = "http://172.20.10.5:8080"
 
 export const API = {
   // TERRESTRE

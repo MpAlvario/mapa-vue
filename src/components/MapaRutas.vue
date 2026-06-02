@@ -531,4 +531,21 @@ onBeforeUnmount(() => {
   50% { background: #ef4444; }
   100% { background: #3b82f6; }
 }
+
+.tooltip-patrulla {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #111827;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 9px;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+
+.tooltip-patrulla::before {
+  border-top-color: rgba(255, 255, 255, 0.82);
+}
 </style>

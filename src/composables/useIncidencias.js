@@ -314,7 +314,30 @@ export function useIncidencias(map, markersLayer, trazarRuta, asignarPatrullaAPI
           const btnAsignar = popup.querySelector(".btnAsignar")
 
           if (btnRuta) {
-            btnRuta.onclick = () => irAIncidencia(lat, lon, inc.id)
+            btnRuta.onclick = async () => {
+              if (!map.value) return
+              if (!miUbicacion.value) return alert("No se pudo obtener tu ubicación")
+
+              map.value.closePopup()
+
+              btnRuta.disabled = true
+              btnRuta.innerText = "Asignando..."
+
+              console.time("asignarPatrulla")
+
+              try {
+                await asignarPatrullaAPI(lat, lon, inc.id, {
+                  origen: miUbicacion.value
+                })
+                btnRuta.innerText = "Asignado"
+              } catch (e) {
+                console.error(e)
+                btnRuta.disabled = false
+                btnRuta.innerText = "Intentar de nuevo"
+              }
+
+              console.timeEnd("asignarPatrulla")
+            }
           }
 
           if (btnAsignar) {

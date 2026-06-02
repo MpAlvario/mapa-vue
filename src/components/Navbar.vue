@@ -6,7 +6,8 @@
       <img src="/LogoClaro.png" alt="MapHub Logo" class="navbar-logo" />
       <select v-model="localMap" @change="emitMapChange">
         <option value="mexico">Mapa de México</option>
-        <option value="monitoreo">Mapa Monitoreo Marino</option>
+       <option value="monitoreo">Mapa Monitoreo Marino</option> 
+       
         <option value="rutas">Mapa de rutas</option>
       </select>
     </div>
