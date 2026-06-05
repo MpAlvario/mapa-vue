@@ -33,17 +33,14 @@ Este enfoque permite identificar rápidamente la naturaleza de un incidente sin 
 
 
 ## Frontend
-Vue 3
-JavaScript
-Leaflet
-CesiumJS
-Axios
-Vite
-Backend
-Node.js
-Express
-PostgreSQL
-Docker
+- Vue 3
+- JavaScript
+- Leaflet
+- Axios
+- Vite
+- Node.js
+- PostgreSQL
+- Docker
 
 ## Módulos Principales
  ### Mapa Terrestre
