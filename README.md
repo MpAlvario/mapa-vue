@@ -3,15 +3,15 @@
 Sistema web desarrollado para la visualización, monitoreo y análisis de eventos georreferenciados en tiempo real mediante tecnologías modernas de cartografía digital.
 
 ## Características
-📍 Visualización de incidentes en mapas interactivos.
-🚓 Monitoreo de unidades y patrullas en tiempo real.
-🔥 Mapas de calor (Heatmaps).
-📊 Dashboard estadístico de incidentes.
-🗂️ Gestión de zonas y cuadrículas tácticas.
-🛣️ Visualización y seguimiento de rutas.
-📡 Actualización automática de información.
-🎯 Predicción de zonas con mayor incidencia.
-🛠️ Tecnologías Utilizadas
+- Visualización de incidentes en mapas interactivos.
+- Monitoreo de unidades y patrullas en tiempo real.
+- Mapas de calor (Heatmaps).
+- Dashboard estadístico de incidentes.
+- Gestión de zonas y cuadrículas tácticas.
+- Visualización y seguimiento de rutas.
+- Actualización automática de información.
+- Predicción de zonas con mayor incidencia.
+- Tecnologías Utilizadas
 
 ## 🎨 Diseño y Visualización
 La interfaz fue diseñada considerando principios de usabilidad, accesibilidad visual y análisis geoespacial para facilitar la interpretación rápida de eventos en el mapa.
