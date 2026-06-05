@@ -80,5 +80,5 @@ npm run dev
 ## Autor
 
 Montserrat Palma
-Frontend Developer | Vue.js | Sistemas Geoespaciales
+| Frontend Developer | Vue.js | Sistemas Geoespaciales
 Desarrollado como parte de un proyecto de monitoreo y análisis geoespacial en tiempo real.
